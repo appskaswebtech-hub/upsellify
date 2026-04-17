@@ -1,0 +1,58 @@
+<div
+  class="selleasy-fbt-block"
+  data-selleasy-block
+  data-product-id="{{ product.id }}"
+  data-product-handle="{{ product.handle }}"
+  data-currency="{{ cart.currency.iso_code }}"
+  {{ block.shopify_attributes }}
+></div>
+
+<script src="{{ 'upsellify-widget.js' | asset_url }}" defer></script>
+<link rel="stylesheet" href="{{ 'upsellify-widget.css' | asset_url }}">
+
+{% schema %}
+{
+  "name": "Frequently buy together",
+  "target": "section",
+  "enabled_on": {
+    "templates": ["product"]
+  },
+  "settings": [
+    {
+      "type": "header",
+      "content": "Layout"
+    },
+    {
+      "type": "select",
+      "id": "alignment",
+      "label": "Alignment",
+      "options": [
+        { "value": "left", "label": "Left" },
+        { "value": "center", "label": "Center" },
+        { "value": "right", "label": "Right" }
+      ],
+      "default": "left"
+    },
+    {
+      "type": "range",
+      "id": "margin_top",
+      "label": "Top spacing",
+      "min": 0,
+      "max": 60,
+      "step": 4,
+      "unit": "px",
+      "default": 16
+    },
+    {
+      "type": "range",
+      "id": "margin_bottom",
+      "label": "Bottom spacing",
+      "min": 0,
+      "max": 60,
+      "step": 4,
+      "unit": "px",
+      "default": 16
+    }
+  ]
+}
+{% endschema %}
