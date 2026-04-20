@@ -2,7 +2,7 @@
 
 client_id = "aa010260b4fcd0578d275ce4e61d3682"
 name = "Upsellify"
-application_url = "https://replied-suspected-sydney-pvc.trycloudflare.com"
+application_url = "https://pope-processes-refrigerator-springfield.trycloudflare.com"
 embedded = true
 
 [build]
@@ -24,8 +24,8 @@ api_version = "2026-07"
 scopes = "write_products"
 
 [auth]
-redirect_urls = [ "https://replied-suspected-sydney-pvc.trycloudflare.com/api/auth" ]
+redirect_urls = [ "https://pope-processes-refrigerator-springfield.trycloudflare.com/api/auth" ]
 [app_proxy]
-url = "https://replied-suspected-sydney-pvc.trycloudflare.com/apps/selleasy"
+url = "https://pope-processes-refrigerator-springfield.trycloudflare.com/apps/selleasy"
 subpath = "selleasy"
 prefix = "apps"
