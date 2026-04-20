@@ -34,6 +34,7 @@ model Session {
 
   @@index([shop])
 }
+// Extend the existing Shop model — add widget defaults
 model Shop {
   id                    String    @id @default(cuid())
   shop                  String    @unique
@@ -42,10 +43,20 @@ model Shop {
   plan                  String    @default("free")
   currency              String    @default("USD")
   locale                String    @default("en")
+  timezone              String    @default("America/New_York")
 
   embedEnabled          Boolean   @default(false)
   firstCampaignCreated  Boolean   @default(false)
   storeVerified         Boolean   @default(false)
+
+  // Widget defaults (overridable per campaign)
+  widgetTitle           String    @default("Frequently bought together")
+  widgetSubtitle        String?
+  widgetCtaLabel        String    @default("Add bundle to cart")
+  widgetAccentColor     String    @default("#000000")
+  widgetTextColor       String    @default("#202020")
+  widgetBorderRadius    Int       @default(8)
+  widgetFontFamily      String    @default("inherit")
 
   campaigns             Campaign[]
 
@@ -53,24 +64,41 @@ model Shop {
   updatedAt             DateTime  @updatedAt
 }
 
+// Extend Campaign — add Phase 2 fields
 model Campaign {
   id            String   @id @default(cuid())
   shop          String
   shopRef       Shop     @relation(fields: [shop], references: [shop], onDelete: Cascade)
 
   name          String
-  type          String   // FBT_LIST | FBT_AMAZON | FBT_CLASSIC (Phase 1: FBT_LIST only)
-  status        String   @default("DRAFT") // DRAFT | ACTIVE | PAUSED
+  type          String   // FBT_LIST | FBT_AMAZON | FBT_CLASSIC
+  status        String   @default("DRAFT") // DRAFT | ACTIVE | PAUSED | SCHEDULED | EXPIRED
   placement     String   @default("PRODUCT_PAGE")
   priority      Int      @default(0)
 
-  triggerType   String   @default("SPECIFIC_PRODUCTS")
+  // Scheduling
+  startDate     DateTime?
+  endDate       DateTime?
+  timezone      String    @default("America/New_York")
 
+  // Trigger (now supports collections + all products)
+  triggerType   String    @default("SPECIFIC_PRODUCTS") // ALL_PRODUCTS | SPECIFIC_PRODUCTS | SPECIFIC_COLLECTIONS
+
+  // Display overrides
   title         String?
   subtitle      String?
 
+  // Campaign settings (screenshot 2)
+  showQuantityPicker    Boolean @default(false)
+  allowDeselectTrigger  Boolean @default(false)
+  doNotPreselect        Boolean @default(false)
+  randomizeOffers       Boolean @default(false)
+  limitOffersShown      Int?
+  autoMatchVariants     Boolean @default(false)
+
   triggers      CampaignTrigger[]
   offers        CampaignOffer[]
+  discount      Discount?
 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -78,14 +106,15 @@ model Campaign {
 
   @@index([shop, status])
   @@index([shop, placement, status])
+  @@index([shop, triggerType])
 }
 
 model CampaignTrigger {
   id             String   @id @default(cuid())
   campaignId     String
   campaign       Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  resourceType   String   // "product"
-  resourceId     String   // gid://shopify/Product/123
+  resourceType   String   // "product" | "collection"
+  resourceId     String   // GID
   resourceTitle  String
   resourceHandle String?
   imageUrl       String?
@@ -103,7 +132,53 @@ model CampaignOffer {
   productTitle  String
   productHandle String?
   imageUrl      String?
+  variantId     String?  // cached first-variant GID (Phase 2 optimization)
   position      Int      @default(0)
 
   @@index([campaignId])
+}
+
+// ─── DISCOUNTS ───
+model Discount {
+  id                String         @id @default(cuid())
+  shop              String
+  campaignId        String         @unique
+  campaign          Campaign       @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  type              String         @default("NONE") // NONE | PERCENTAGE | FIXED | TIERED
+  value             Float?         // for PERCENTAGE or FIXED
+  shopifyDiscountId String?        // GID of the Shopify-created discount
+
+  tiers             DiscountTier[]
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([shop])
+}
+
+model DiscountTier {
+  id         String   @id @default(cuid())
+  discountId String
+  discount   Discount @relation(fields: [discountId], references: [id], onDelete: Cascade)
+  minItems   Int                      // "Buy 4" → minItems = 4
+  valueType  String                   // PERCENTAGE | FIXED
+  value      Float                    // 25 means 25%
+  label      String?                  // "Buy 4, get 25%"
+  position   Int @default(0)
+
+  @@index([discountId])
+}
+
+// ─── COLLECTION CACHE (for trigger resolution) ───
+model CollectionProductCache {
+  id           String   @id @default(cuid())
+  shop         String
+  collectionId String   // GID
+  productIds   Json     // string[]  — GIDs
+  expiresAt    DateTime
+  updatedAt    DateTime @updatedAt
+
+  @@unique([shop, collectionId])
+  @@index([expiresAt])
 }
