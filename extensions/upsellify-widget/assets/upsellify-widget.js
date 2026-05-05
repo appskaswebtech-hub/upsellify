@@ -1,18 +1,12 @@
 (function () {
   "use strict";
-
-  // ---------------- Early exits ----------------
   if (!window.location.pathname.includes("/products/")) return;
   if (window.__selleasyInited) return;
   window.__selleasyInited = true;
 
-  const handle = window.location.pathname
-    .split("/products/")[1]
-    ?.split("/")[0]
-    ?.split("?")[0];
+  const handle = window.location.pathname.split("/products/")[1]?.split("/")[0]?.split("?")[0];
   if (!handle) return;
 
-  // ---------------- Config ----------------
   const ROUTES = {
     product: (h) => `/products/${h}.js`,
     campaigns: (pid) => `/apps/selleasy/campaigns?productId=${pid}`,
@@ -20,381 +14,618 @@
     cart: "/cart",
   };
 
-  // ---------------- State ----------------
   const state = {
-    trigger: null,   // { product, selectedVariantId }
-    offers: [],      // [{ product, selected, selectedVariantId }]
+    trigger: null,
+    offers: [],
     campaign: null,
     currency: "USD",
     mountEl: null,
-    isAdding: false,
+    currentTierIdx: 0,
+    layoutType: "FBT_LIST",
   };
 
-  // ---------------- Utils ----------------
   const money = (cents, currency) =>
     new Intl.NumberFormat(document.documentElement.lang || "en", {
-      style: "currency",
-      currency: currency || "USD",
+      style: "currency", currency: currency || "USD",
     }).format((cents || 0) / 100);
-
   const escapeHtml = (s) =>
     String(s || "").replace(/[&<>"']/g, (c) => ({
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
     }[c]));
+  const getVariant = (p, id) =>
+    p.variants.find((v) => v.id === Number(id)) || p.variants[0];
 
-  const getVariant = (product, id) =>
-    product.variants.find((v) => v.id === Number(id)) || product.variants[0];
-
-  // ---------------- Bootstrap ----------------
+  // ── Bootstrap
   fetch(ROUTES.product(handle))
-    .then((r) => {
-      if (!r.ok) throw new Error(`Product fetch failed: ${r.status}`);
-      return r.json();
-    })
+    .then((r) => r.json())
     .then(async (product) => {
+      const res = await fetch(ROUTES.campaigns(product.id), { credentials: "same-origin" })
+        .then((r) => r.json()).catch(() => ({ campaigns: [] }));
+      const campaign = res.campaigns?.[0];
+      if (!campaign) return;
+
+      state.campaign = campaign;
+      state.layoutType = campaign.type || "FBT_LIST";
+
       state.trigger = {
         product,
         selectedVariantId: product.variants[0].id,
+        quantity: 1,
+        selected: true,
       };
 
-      const res = await fetch(ROUTES.campaigns(product.id), {
-        credentials: "same-origin",
-      })
-        .then((r) => r.json())
-        .catch(() => ({ campaigns: [] }));
-
-      const campaign = res.campaigns?.[0];
-      if (!campaign) return;
-      state.campaign = campaign;
-
-      const offerProducts = await Promise.all(
+      const offers = await Promise.all(
         campaign.offers.map((o) =>
-          fetch(ROUTES.product(o.handle))
-            .then((r) => (r.ok ? r.json() : null))
-            .catch(() => null),
+          fetch(ROUTES.product(o.handle)).then((r) => r.json()).catch(() => null),
         ),
       );
 
-      state.offers = offerProducts
-        .filter(Boolean)
-        .map((p) => ({
+      state.offers = offers.filter(Boolean).map((p) => {
+        let variantId = p.variants[0].id;
+        if (campaign.settings?.autoMatchVariants) {
+          const triggerVariantName = product.variants[0].title;
+          const match = p.variants.find((v) => v.title === triggerVariantName);
+          if (match) variantId = match.id;
+        }
+        return {
           product: p,
-          selected: true,
-          selectedVariantId: p.variants[0].id,
-        }));
+          selected: !campaign.settings?.doNotPreselect,
+          selectedVariantId: variantId,
+          quantity: 1,
+        };
+      });
 
       mount();
     })
-    .catch((e) => console.error("[selleasy] bootstrap failed:", e));
+    .catch((e) => console.error("[selleasy]", e));
 
-  // ---------------- Mount ----------------
   function mount() {
-    // Priority 1: App Block (drag-drop placement)
     const block = document.querySelector("[data-selleasy-block]");
+    const embed = document.querySelector("[data-selleasy-embed]");
     if (block) {
       state.mountEl = block;
-      render(block);
-      const embed = document.querySelector("[data-selleasy-embed]");
       if (embed) embed.style.display = "none";
-      return;
-    }
+    } else if (embed) {
+      state.mountEl = embed;
+      const target =
+        document.querySelector("form[action*='/cart/add']") ||
+        document.querySelector("main");
+      if (target?.parentNode) target.parentNode.insertBefore(embed, target.nextSibling);
+    } else return;
 
-    // Priority 2: App Embed (auto-injection)
-    const embed = document.querySelector("[data-selleasy-embed]");
-    if (!embed) return;
-
-    const target =
-      document.querySelector("form[action*='/cart/add']") ||
-      document.querySelector(".product__info-wrapper") ||
-      document.querySelector(".product__info") ||
-      document.querySelector("main");
-
-    if (target && target.parentNode) {
-      target.parentNode.insertBefore(embed, target.nextSibling);
-    }
-    state.mountEl = embed;
-    render(embed);
+    applyAppearance();
+    render();
   }
 
-  // ---------------- Render ----------------
-  function render(root) {
+  function applyAppearance() {
+    const a = state.campaign.appearance || {};
+    const root = state.mountEl;
+    root.style.setProperty("--sl-accent", a.accentColor || "#000");
+    root.style.setProperty("--sl-text", a.textColor || "#202020");
+    root.style.setProperty("--sl-radius", `${a.borderRadius || 8}px`);
+    if (a.fontFamily && a.fontFamily !== "inherit") {
+      root.style.setProperty("--sl-font", a.fontFamily);
+    }
+  }
+
+  function render() {
     const c = state.campaign;
-    const title = c.title || "Frequently bought together";
-    const subtitle = c.subtitle || "";
-
-    root.innerHTML = `
-      <div class="sl-fbt">
+    state.mountEl.innerHTML = `
+      <div class="sl-fbt sl-fbt--${state.layoutType.toLowerCase().replace("fbt_", "")}">
         <div class="sl-fbt__head">
-          <h3 class="sl-fbt__title">${escapeHtml(title)}</h3>
-          ${subtitle ? `<p class="sl-fbt__subtitle">${escapeHtml(subtitle)}</p>` : ""}
+          <h3 class="sl-fbt__title">${escapeHtml(c.title)}</h3>
+          ${c.subtitle ? `<p class="sl-fbt__subtitle">${escapeHtml(c.subtitle)}</p>` : ""}
         </div>
-
-        <div class="sl-fbt__trigger" data-role="trigger"></div>
-
-        <div class="sl-fbt__plus" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="22" height="22">
-            <circle cx="12" cy="12" r="11" fill="#fff" stroke="#d9d9d9" />
-            <line x1="7" y1="12" x2="17" y2="12" stroke="#333" stroke-width="1.6" />
-            <line x1="12" y1="7" x2="12" y2="17" stroke="#333" stroke-width="1.6" />
-          </svg>
-        </div>
-
-        <div class="sl-fbt__offers" data-role="offers"></div>
-
+        ${renderTierTabs()}
+        <div data-role="body"></div>
         <div class="sl-fbt__total" data-role="total"></div>
         <p class="sl-fbt__note">Selected items will be added to cart.</p>
-
         <div class="sl-fbt__error" data-role="error" hidden></div>
-
-        <button class="sl-fbt__cta" type="button" data-role="cta">
-          Add bundle to cart
-        </button>
+        <button class="sl-fbt__cta" type="button" data-role="cta">${escapeHtml(c.ctaLabel)}</button>
       </div>
     `;
-
-    renderTrigger(root.querySelector("[data-role=trigger]"));
-    renderOffers(root.querySelector("[data-role=offers]"));
-    renderTotal(root.querySelector("[data-role=total]"));
-
-    root
-      .querySelector("[data-role=cta]")
-      .addEventListener("click", addBundleToCart);
+    wireTierTabs();
+    renderBody();
+    renderTotal();
+    state.mountEl.querySelector("[data-role=cta]").addEventListener("click", addBundleToCart);
   }
 
-  function renderTrigger(el) {
-    const { product, selectedVariantId } = state.trigger;
-    const variant = getVariant(product, selectedVariantId);
-    const img = product.featured_image || product.images?.[0];
+  function renderTierTabs() {
+    const d = state.campaign.discount;
+    if (!d || d.type !== "TIERED" || !d.tiers?.length) return "";
+    return `
+      <div class="sl-fbt__tiers">
+        ${d.tiers.map((t, i) => `
+          <button class="sl-fbt__tier ${i === state.currentTierIdx ? "is-active" : ""}" data-tier="${i}" type="button">
+            ${escapeHtml(t.label || `Buy ${t.minItems}, get ${t.value}${t.valueType === "PERCENTAGE" ? "%" : ""}`)}
+          </button>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  function wireTierTabs() {
+    state.mountEl.querySelectorAll("[data-tier]").forEach((b) => {
+      b.addEventListener("click", () => {
+        state.currentTierIdx = Number(b.dataset.tier);
+        render();
+      });
+    });
+  }
+
+  function renderBody() {
+    const el = state.mountEl.querySelector("[data-role=body]");
+    if (state.layoutType === "FBT_AMAZON") return renderAmazonLayout(el);
+    if (state.layoutType === "FBT_CLASSIC") return renderClassicLayout(el);
+    return renderListLayout(el);
+  }
+
+  function renderListLayout(el) {
+    el.innerHTML = `
+      <div data-role="trigger-row"></div>
+      <div class="sl-fbt__plus">
+        <svg viewBox="0 0 24 24" width="22" height="22">
+          <circle cx="12" cy="12" r="11" fill="#fff" stroke="#d9d9d9"/>
+          <line x1="7" y1="12" x2="17" y2="12" stroke="#333" stroke-width="1.6"/>
+          <line x1="12" y1="7" x2="12" y2="17" stroke="#333" stroke-width="1.6"/>
+        </svg>
+      </div>
+      <div data-role="offers"></div>
+    `;
+    renderRow(el.querySelector("[data-role=trigger-row]"), state.trigger, true);
+    const offersEl = el.querySelector("[data-role=offers]");
+    offersEl.innerHTML = "";
+    state.offers.forEach((o, i) => {
+      const d = document.createElement("div");
+      if (i > 0) d.style.marginTop = "8px";
+      offersEl.appendChild(d);
+      renderRow(d, o, false, i);
+    });
+  }
+
+  // function renderAmazonLayout(el) {
+  //   const all = [state.trigger, ...state.offers];
+  //   el.innerHTML = `
+  //     <div class="sl-fbt__amazon">
+  //       ${all.map((item, i) => {
+  //         const img = item.product.featured_image || item.product.images?.[0];
+  //         const isTrigger = i === 0;
+  //         return `
+  //           ${i > 0 ? `<span class="sl-fbt__amazon-plus">+</span>` : ""}
+  //           <div class="sl-fbt__amazon-item ${!item.selected && !isTrigger ? "is-unchecked" : ""}">
+  //             ${!isTrigger ? `
+  //               <label class="sl-fbt__check sl-fbt__check--overlay">
+  //                 <input type="checkbox" data-role="item-check" data-idx="${i - 1}" ${item.selected ? "checked" : ""} />
+  //                 <span class="sl-fbt__box"></span>
+  //               </label>` : ""}
+  //             ${img ? `<img src="${img}" alt="" />` : `<div class="sl-fbt__img--ph"></div>`}
+  //             <div class="sl-fbt__amazon-name">${escapeHtml(item.product.title)}</div>
+  //             <div class="sl-fbt__price">${priceHTML(getVariant(item.product, item.selectedVariantId))}</div>
+  //           </div>
+  //         `;
+  //       }).join("")}
+  //     </div>
+  //   `;
+  //   el.querySelectorAll("input[data-role=item-check]").forEach((cb) => {
+  //     cb.addEventListener("change", (e) => {
+  //       state.offers[Number(e.target.dataset.idx)].selected = e.target.checked;
+  //       renderBody();
+  //       renderTotal();
+  //     });
+  //   });
+  // }
+
+  // function renderClassicLayout(el) {
+  //   el.innerHTML = `
+  //     <div class="sl-fbt__classic-grid">
+  //       ${[state.trigger, ...state.offers].map((item, i, arr) => {
+  //         const img = item.product.featured_image || item.product.images?.[0];
+  //         return `
+  //           <div class="sl-fbt__classic-tile">
+  //             ${img ? `<img src="${img}" alt="" />` : `<div class="sl-fbt__img--ph"></div>`}
+  //             ${i < arr.length - 1 ? `<span class="sl-fbt__plus-small">+</span>` : ""}
+  //           </div>
+  //         `;
+  //       }).join("")}
+  //     </div>
+  //     <div data-role="classic-list"></div>
+  //   `;
+  //   const list = el.querySelector("[data-role=classic-list]");
+  //   const tDiv = document.createElement("div");
+  //   list.appendChild(tDiv);
+  //   renderRow(tDiv, state.trigger, true);
+  //   state.offers.forEach((o, i) => {
+  //     const d = document.createElement("div");
+  //     d.style.marginTop = "8px";
+  //     list.appendChild(d);
+  //     renderRow(d, o, false, i);
+  //   });
+  // }
+
+  function renderRow(el, item, isTrigger, offerIdx) {
+    const s = state.campaign.settings || {};
+    const v = getVariant(item.product, item.selectedVariantId);
+    const img = item.product.featured_image || item.product.images?.[0];
+    const canToggle = !isTrigger || s.allowDeselectTrigger;
+    const showQty = s.showQuantityPicker;
 
     el.innerHTML = `
-      <div class="sl-fbt__row sl-fbt__row--trigger">
-        ${img
-          ? `<img class="sl-fbt__img" src="${img}" alt="" loading="lazy" />`
-          : `<div class="sl-fbt__img sl-fbt__img--ph"></div>`}
+      <div class="sl-fbt__row ${isTrigger ? "sl-fbt__row--trigger" : ""} ${!item.selected ? "is-unchecked" : ""}">
+        ${canToggle ? `
+          <label class="sl-fbt__check">
+            <input type="checkbox" data-role="row-check" data-trigger="${isTrigger}" data-idx="${offerIdx ?? ""}" ${item.selected ? "checked" : ""} />
+            <span class="sl-fbt__box"></span>
+          </label>` : `<span class="sl-fbt__check-placeholder"></span>`}
+        ${img ? `<img class="sl-fbt__img" src="${img}" alt="" />` : `<div class="sl-fbt__img sl-fbt__img--ph"></div>`}
         <div class="sl-fbt__meta">
-          <div class="sl-fbt__name">${escapeHtml(product.title)}</div>
-          ${renderVariantSelect(product, selectedVariantId, "trigger")}
+          <div class="sl-fbt__name">${escapeHtml(item.product.title)}</div>
+          ${renderVariantSelect(item.product, item.selectedVariantId, isTrigger, offerIdx)}
         </div>
-        <div class="sl-fbt__price">${variantPriceHTML(variant)}</div>
+        ${showQty ? `
+          <div class="sl-fbt__qty">
+            <button type="button" data-role="qty-dec" data-trigger="${isTrigger}" data-idx="${offerIdx ?? ""}">−</button>
+            <span>${item.quantity}</span>
+            <button type="button" data-role="qty-inc" data-trigger="${isTrigger}" data-idx="${offerIdx ?? ""}">+</button>
+          </div>` : ""}
+        <div class="sl-fbt__price">${priceHTML(v)}</div>
       </div>
     `;
-
-    const sel = el.querySelector("select[data-role=variant]");
-    if (sel) {
-      sel.addEventListener("change", (e) => {
-        state.trigger.selectedVariantId = Number(e.target.value);
-        renderTrigger(el);
-        renderTotal(state.mountEl.querySelector("[data-role=total]"));
-      });
-    }
+    wireRow(el);
   }
 
-  function renderOffers(el) {
-    el.innerHTML = state.offers
-      .map((o, i) => {
-        const v = getVariant(o.product, o.selectedVariantId);
-        const img = o.product.featured_image || o.product.images?.[0];
-        return `
-          <div class="sl-fbt__row ${o.selected ? "" : "is-unchecked"}" data-idx="${i}">
-            <label class="sl-fbt__check">
-              <input type="checkbox" data-role="offer-check" data-idx="${i}" ${o.selected ? "checked" : ""} />
-              <span class="sl-fbt__box"></span>
-            </label>
-            ${img
-              ? `<img class="sl-fbt__img" src="${img}" alt="" loading="lazy" />`
-              : `<div class="sl-fbt__img sl-fbt__img--ph"></div>`}
-            <div class="sl-fbt__meta">
-              <div class="sl-fbt__name">${escapeHtml(o.product.title)}</div>
-              ${renderVariantSelect(o.product, o.selectedVariantId, "offer", i)}
-            </div>
-            <div class="sl-fbt__price">${variantPriceHTML(v)}</div>
-          </div>
-        `;
-      })
-      .join("");
-
-    el.querySelectorAll("input[data-role=offer-check]").forEach((cb) => {
+  function wireRow(el) {
+    el.querySelectorAll("input[data-role=row-check]").forEach((cb) => {
       cb.addEventListener("change", (e) => {
-        const idx = Number(e.target.dataset.idx);
-        state.offers[idx].selected = e.target.checked;
-        renderOffers(el);
-        renderTotal(state.mountEl.querySelector("[data-role=total]"));
+        const isT = e.target.dataset.trigger === "true";
+        const idx = e.target.dataset.idx === "" ? null : Number(e.target.dataset.idx);
+        if (isT) state.trigger.selected = e.target.checked;
+        else state.offers[idx].selected = e.target.checked;
+        renderBody();
+        renderTotal();
       });
     });
-
     el.querySelectorAll("select[data-role=variant]").forEach((sel) => {
       sel.addEventListener("change", (e) => {
-        const idx = Number(e.target.dataset.idx);
-        state.offers[idx].selectedVariantId = Number(e.target.value);
-        renderOffers(el);
-        renderTotal(state.mountEl.querySelector("[data-role=total]"));
+        const isT = e.target.dataset.trigger === "true";
+        const idx = e.target.dataset.idx === "" ? null : Number(e.target.dataset.idx);
+        const id = Number(e.target.value);
+        if (isT) state.trigger.selectedVariantId = id;
+        else state.offers[idx].selectedVariantId = id;
+        renderBody();
+        renderTotal();
+      });
+    });
+    el.querySelectorAll("[data-role=qty-inc], [data-role=qty-dec]").forEach((b) => {
+      b.addEventListener("click", () => {
+        const isT = b.dataset.trigger === "true";
+        const idx = b.dataset.idx === "" ? null : Number(b.dataset.idx);
+        const target = isT ? state.trigger : state.offers[idx];
+        const delta = b.dataset.role === "qty-inc" ? 1 : -1;
+        target.quantity = Math.max(1, target.quantity + delta);
+        renderBody();
+        renderTotal();
       });
     });
   }
 
-  function renderTotal(el) {
-    if (!el) return;
+  function renderVariantSelect(product, selectedId, isTrigger, offerIdx) {
+    if (!product.variants || product.variants.length <= 1) return "";
+    const opts = product.variants.map((v) =>
+      `<option value="${v.id}" ${v.id === selectedId ? "selected" : ""}>${escapeHtml(v.title)}${v.available ? "" : " — Sold out"}</option>`,
+    ).join("");
+    return `<select class="sl-fbt__variant" data-role="variant" data-trigger="${isTrigger}" data-idx="${offerIdx ?? ""}">${opts}</select>`;
+  }
+
+  function priceHTML(v) {
+    if (!v) return "";
+    const hasCompare = v.compare_at_price && v.compare_at_price > v.price;
+    return `${hasCompare ? `<span class="sl-fbt__compare">${money(v.compare_at_price, state.currency)}</span>` : ""}<span class="sl-fbt__current">${money(v.price, state.currency)}</span>`;
+  }
+
+  function renderTotal() {
+    const el = state.mountEl.querySelector("[data-role=total]");
     const items = buildCartItems();
-    const total = items.reduce((sum, it) => sum + it.price * it.quantity, 0);
+    const subtotal = items.reduce((s, i) => s + i.price * i.quantity, 0);
+    const totalQty = items.reduce((s, i) => s + i.quantity, 0);
+
+    const d = state.campaign.discount;
+    let discountAmt = 0;
+    let discountLabel = "";
+    if (d && d.type !== "NONE") {
+      let tier = null;
+      if (d.type === "TIERED") {
+        tier = [...d.tiers].filter((t) => totalQty >= t.minItems).sort((a, b) => b.minItems - a.minItems)[0];
+      } else if (d.value) {
+        tier = { value: d.value, valueType: d.type };
+      }
+      if (tier) {
+        if (tier.valueType === "PERCENTAGE") {
+          discountAmt = Math.round(subtotal * (tier.value / 100));
+          discountLabel = `-${tier.value}%`;
+        } else {
+          discountAmt = Math.round(tier.value * 100);
+          discountLabel = `-${money(discountAmt, state.currency)}`;
+        }
+      }
+    }
+    const total = Math.max(0, subtotal - discountAmt);
+
     el.innerHTML = `
       <div class="sl-fbt__total-row">
         <span class="sl-fbt__total-label">Total</span>
-        <span class="sl-fbt__total-val">${money(total, state.currency)}</span>
+        <span>
+          ${discountAmt > 0 ? `<span class="sl-fbt__compare">${money(subtotal, state.currency)}</span> <span class="sl-fbt__discount-tag">${discountLabel}</span>` : ""}
+          <span class="sl-fbt__total-val">${money(total, state.currency)}</span>
+        </span>
       </div>
     `;
   }
 
-  function renderVariantSelect(product, selectedId, role, idx) {
-    if (!product.variants || product.variants.length <= 1) return "";
-    const opts = product.variants
-      .map(
-        (v) =>
-          `<option value="${v.id}" ${v.id === selectedId ? "selected" : ""}>${escapeHtml(v.title)}${
-            v.available ? "" : " — Sold out"
-          }</option>`,
-      )
-      .join("");
-    const idxAttr = typeof idx === "number" ? `data-idx="${idx}"` : "";
-    return `<select class="sl-fbt__variant" data-role="variant" ${idxAttr}>${opts}</select>`;
-  }
+  // function buildCartItems() {
+  //   const raw = [];
+  //   if (state.trigger.selected) {
+  //     const v = getVariant(state.trigger.product, state.trigger.selectedVariantId);
+  //     if (v) {
+  //       raw.push({
+  //         id: v.id, quantity: state.trigger.quantity,
+  //         price: v.price, title: state.trigger.product.title, available: v.available,
+  //       });
+  //     }
+  //   }
+  //   state.offers.forEach((o) => {
+  //     if (!o.selected) return;
+  //     const v = getVariant(o.product, o.selectedVariantId);
+  //     if (v) {
+  //       raw.push({
+  //         id: v.id, quantity: o.quantity,
+  //         price: v.price, title: o.product.title, available: v.available,
+  //       });
+  //     }
+  //   });
+  //   const map = new Map();
+  //   for (const it of raw) {
+  //     if (map.has(it.id)) map.get(it.id).quantity += it.quantity;
+  //     else map.set(it.id, { ...it });
+  //   }
+  //   return Array.from(map.values());
+  // }
 
-  function variantPriceHTML(v) {
-    if (!v) return "";
-    const hasCompare = v.compare_at_price && v.compare_at_price > v.price;
-    return `
-      ${hasCompare ? `<span class="sl-fbt__compare">${money(v.compare_at_price, state.currency)}</span>` : ""}
-      <span class="sl-fbt__current">${money(v.price, state.currency)}</span>
-    `;
-  }
+  // async function addBundleToCart() {
+  //   const btn = state.mountEl.querySelector("[data-role=cta]");
+  //   const errEl = state.mountEl.querySelector("[data-role=error]");
+  //   errEl.hidden = true;
+  //   const original = btn.textContent;
+  //   btn.disabled = true;
+  //   btn.textContent = "Adding...";
 
-  // ---------------- Cart logic ----------------
-  /**
-   * Build a deduplicated, valid list of items to send to /cart/add.js
-   * Dedups by variant ID (if the trigger equals an offer, their quantities sum)
-   */
+  //   try {
+  //     const items = buildCartItems();
+  //     if (!items.length) throw new Error("Please select at least one item.");
+  //     const unavail = items.filter((i) => !i.available);
+  //     if (unavail.length) {
+  //       throw new Error(`${unavail.map((u) => `"${u.title}"`).join(", ")} sold out.`);
+  //     }
+
+  //     const res = await fetch(ROUTES.cartAdd, {
+  //       method: "POST",
+  //       headers: {
+  //         "Content-Type": "application/json",
+  //         Accept: "application/json",
+  //         "X-Requested-With": "XMLHttpRequest",
+  //       },
+  //       body: JSON.stringify({
+  //         items: items.map((i) => ({ id: i.id, quantity: i.quantity })),
+  //       }),
+  //     });
+  //     const data = await res.json();
+  //     if (!res.ok) throw new Error(data.description || data.message || `HTTP ${res.status}`);
+
+  //     window.location.href = ROUTES.cart;
+  //   } catch (e) {
+  //     console.error("[selleasy]", e);
+  //     errEl.textContent = e.message || "Could not add the bundle.";
+  //     errEl.hidden = false;
+  //     btn.disabled = false;
+  //     btn.textContent = original;
+  //   }
+  // }
   function buildCartItems() {
-    const raw = [];
+    const items = [];
 
-    const tv = getVariant(state.trigger.product, state.trigger.selectedVariantId);
-    if (tv) {
-      raw.push({
-        id: tv.id,
-        quantity: 1,
-        price: tv.price,
-        title: state.trigger.product.title,
-        available: tv.available,
-      });
+    if (state.trigger.selected) {
+      const v = getVariant(state.trigger.product, state.trigger.selectedVariantId);
+      if (v) {
+        items.push({
+          id: v.id,
+          quantity: state.trigger.quantity,
+          price: v.price,
+          title: state.trigger.product.title,
+          available: v.available,
+        });
+      }
     }
 
     state.offers.forEach((o) => {
       if (!o.selected) return;
       const v = getVariant(o.product, o.selectedVariantId);
-      if (!v) return;
-      raw.push({
-        id: v.id,
-        quantity: 1,
-        price: v.price,
-        title: o.product.title,
-        available: v.available,
-      });
+      if (v) {
+        items.push({
+          id: v.id,
+          quantity: o.quantity,
+          price: v.price,
+          title: o.product.title,
+          available: v.available,
+        });
+      }
     });
 
-    // Dedup by variant id
-    const map = new Map();
-    for (const it of raw) {
-      if (map.has(it.id)) {
-        map.get(it.id).quantity += it.quantity;
-      } else {
-        map.set(it.id, { ...it });
-      }
-    }
-    return Array.from(map.values());
-  }
-
-  function showError(message) {
-    const el = state.mountEl?.querySelector("[data-role=error]");
-    if (!el) return;
-    el.textContent = message;
-    el.hidden = false;
-    clearTimeout(showError._t);
-    showError._t = setTimeout(() => {
-      el.hidden = true;
-    }, 6000);
-  }
-
-  function clearError() {
-    const el = state.mountEl?.querySelector("[data-role=error]");
-    if (el) el.hidden = true;
+    // Note: NO deduplication. Each bundle item is a distinct cart line
+    // because of the _bundle_id property.
+    return items;
   }
 
   async function addBundleToCart() {
-    if (state.isAdding) return;
-    state.isAdding = true;
-    clearError();
-
     const btn = state.mountEl.querySelector("[data-role=cta]");
-    const originalLabel = btn.textContent;
+    const errEl = state.mountEl.querySelector("[data-role=error]");
+    errEl.hidden = true;
+    const original = btn.textContent;
     btn.disabled = true;
     btn.textContent = "Adding...";
 
     try {
       const items = buildCartItems();
-
-      if (items.length === 0) {
-        throw new Error("Please select at least one item.");
+      if (!items.length) throw new Error("Please select at least one item.");
+      const unavail = items.filter((i) => !i.available);
+      if (unavail.length) {
+        throw new Error(`${unavail.map((u) => `"${u.title}"`).join(", ")} sold out.`);
       }
 
-      const unavailable = items.filter((i) => !i.available);
-      if (unavailable.length > 0) {
-        const names = unavailable.map((i) => `"${i.title}"`).join(", ");
-        throw new Error(
-          `${names} ${unavailable.length === 1 ? "is" : "are"} sold out. Please deselect and try again.`,
-        );
+      const bundleId = `bundle_${state.campaign.id}_${Date.now()}`;
+      const campaignName = state.campaign.title || "Bundle";
+
+      // Detect which sections the theme uses
+      const sectionsToRender = [];
+      if (document.querySelector("cart-drawer")) {
+        sectionsToRender.push("cart-drawer");
+      }
+      if (document.getElementById("cart-icon-bubble") ||
+          document.querySelector("[id*='cart-icon-bubble']")) {
+        sectionsToRender.push("cart-icon-bubble");
       }
 
-      const payload = {
-        items: items.map((i) => ({ id: i.id, quantity: i.quantity })),
+      const body = {
+        items: items.map((i, index) => ({
+          id: i.id,
+          quantity: i.quantity,
+          properties: {
+            "_bundle_id": bundleId,
+            "_bundle_campaign_id": state.campaign.id,
+            "_bundle_role": index === 0 ? "trigger" : "offer",
+            "Bundle": campaignName,
+          },
+        })),
       };
 
-      console.log("[selleasy] /cart/add.js →", payload);
+      // Ask Shopify to render the sections atomically with the add
+      if (sectionsToRender.length) {
+        body.sections = sectionsToRender.join(",");
+        body.sections_url = window.location.pathname;
+      }
 
-      const res = await fetch(ROUTES.cartAdd, {
+      const addRes = await fetch(ROUTES.cartAdd, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
           "X-Requested-With": "XMLHttpRequest",
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(body),
       });
 
-      const data = await res.json().catch(() => ({}));
-      console.log("[selleasy] /cart/add.js ←", res.status, data);
-
-      if (!res.ok) {
-        const msg =
-          data.description ||
-          data.message ||
-          `Add to cart failed (HTTP ${res.status})`;
-        throw new Error(msg);
+      const addData = await addRes.json();
+      if (!addRes.ok) {
+        throw new Error(addData.description || addData.message || `HTTP ${addRes.status}`);
       }
 
-      // Notify the theme (Dawn + most OS 2.0 themes listen for this)
-      document.dispatchEvent(
-        new CustomEvent("cart:refresh", { detail: { items: data.items || [] } }),
-      );
-      document.dispatchEvent(
-        new CustomEvent("cart:added", { detail: { items: data.items || [] } }),
-      );
+      // addData.sections is a map: { "cart-drawer": "<html>...</html>", "cart-icon-bubble": "..." }
+      const opened = await openCartDrawer(addData.sections);
+      if (!opened) {
+        window.location.href = ROUTES.cart;
+        return;
+      }
 
-      // Redirect to cart
-      window.location.href = ROUTES.cart;
-    } catch (e) {
-      console.error("[selleasy] add-to-cart error:", e);
-      showError(e.message || "Could not add the bundle to your cart.");
       btn.disabled = false;
-      btn.textContent = originalLabel;
-      state.isAdding = false;
+      btn.textContent = original;
+    } catch (e) {
+      console.error("[selleasy]", e);
+      errEl.textContent = e.message || "Could not add the bundle.";
+      errEl.hidden = false;
+      btn.disabled = false;
+      btn.textContent = original;
     }
+  }
+
+  /**
+   * Open the theme's cart drawer using section HTML returned from /cart/add.js.
+   * Returns true if a drawer was opened, false if no drawer was found.
+   */
+  async function openCartDrawer(sections) {
+    const cartDrawer = document.querySelector("cart-drawer");
+
+    if (cartDrawer && sections?.["cart-drawer"]) {
+      try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(sections["cart-drawer"], "text/html");
+
+        // Shopify returns the full section wrapper. The <cart-drawer> element
+        // is usually nested one level inside that.
+        const freshDrawer = doc.querySelector("cart-drawer");
+        if (freshDrawer) {
+          // Swap INNER contents of the live element (preserves the custom element
+          // and its class listeners; replaces the empty-state template with items)
+          cartDrawer.innerHTML = freshDrawer.innerHTML;
+
+          // Remove the "is-empty" class if Dawn was showing empty state
+          cartDrawer.classList.remove("is-empty");
+
+          // Some Dawn forks use <cart-drawer-items> inside; re-trigger its connected logic
+          cartDrawer.querySelectorAll("cart-drawer-items, cart-items").forEach((el) => {
+            // Force the custom element to re-run its constructor-bound init
+            if (typeof el.connectedCallback === "function") {
+              try { el.connectedCallback(); } catch (e) {}
+            }
+          });
+        }
+
+        // Update the cart icon bubble
+        if (sections["cart-icon-bubble"]) {
+          const bubble = document.getElementById("cart-icon-bubble") ||
+                         document.querySelector("[id*='cart-icon-bubble']");
+          if (bubble) {
+            const bubbleDoc = parser.parseFromString(sections["cart-icon-bubble"], "text/html");
+            const freshBubble = bubbleDoc.querySelector("#cart-icon-bubble") ||
+                                bubbleDoc.querySelector(".shopify-section");
+            if (freshBubble) {
+              bubble.innerHTML = freshBubble.innerHTML;
+            }
+          }
+        }
+
+        // Open the drawer
+        if (typeof cartDrawer.open === "function") {
+          cartDrawer.open();
+        } else {
+          cartDrawer.classList.add("active", "animate", "is-open");
+          document.body.classList.add("overflow-hidden");
+        }
+        return true;
+      } catch (e) {
+        console.error("[selleasy] Dawn drawer update failed:", e);
+      }
+    }
+
+    // ── Fallback: dispatch events and try theme APIs ──
+    const eventNames = ["cart:refresh", "cart:updated", "cart:added", "cart:open", "cart-drawer:open"];
+    eventNames.forEach((name) => {
+      document.dispatchEvent(new CustomEvent(name, { bubbles: true }));
+    });
+
+    if (window.theme?.CartDrawer) {
+      try { new window.theme.CartDrawer().open(); return true; } catch (e) {}
+    }
+
+    const triggerSelectors = [
+      "[data-cart-drawer-toggle]",
+      ".js-drawer-open-cart",
+      "#CartDrawer-trigger",
+      ".header__icon--cart",
+      "a[href='/cart']",
+    ];
+    for (const sel of triggerSelectors) {
+      const el = document.querySelector(sel);
+      if (el) { try { el.click(); return true; } catch (e) {} }
+    }
+
+    return false;
   }
 })();

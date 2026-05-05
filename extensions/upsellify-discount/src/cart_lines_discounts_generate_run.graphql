@@ -1,15 +1,58 @@
+# query CartInput {
+#   cart {
+#     lines {
+#       id
+#       quantity
+#       cost {
+#         subtotalAmount {
+#           amount
+#         }
+#       }
+#       merchandise {
+#         ... on ProductVariant {
+#           id
+#           product {
+#             id
+#           }
+#         }
+#       }
+#     }
+#   }
+#   discount {
+#     discountClasses
+#     metafield(namespace: "selleasy", key: "config") {
+#       value
+#     }
+#   }
+# }
+
 query CartInput {
   cart {
     lines {
       id
+      quantity
       cost {
         subtotalAmount {
           amount
         }
       }
+      merchandise {
+        ... on ProductVariant {
+          id
+          product {
+            id
+          }
+        }
+      }
+      bundleId: attribute(key: "_bundle_id") {
+        value
+      }
     }
   }
   discount {
     discountClasses
+    metafield(namespace: "selleasy", key: "config") {
+      value
+    }
   }
 }

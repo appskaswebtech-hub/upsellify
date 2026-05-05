@@ -7,10 +7,9 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const type = params.type!;
 
-  if (!["FBT_LIST"].includes(type)) {
-    throw new Response("Unsupported type in Phase 1", { status: 400 });
-  }
-
+if (!["FBT_LIST", "FBT_AMAZON", "FBT_CLASSIC"].includes(type)) {
+  throw new Response("Unsupported type", { status: 400 });
+}
   const campaign = await db.campaign.create({
     data: {
       shop: session.shop,

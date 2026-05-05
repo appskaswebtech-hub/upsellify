@@ -3,7 +3,7 @@ import { json } from "@remix-run/node";
 import { useActionData, useLoaderData, useSubmit } from "@remix-run/react";
 import { useState } from "react";
 import {
-  Page, Layout, Card, BlockStack, TextField, Button, Text, Banner, InlineStack, Box, RangeSlider,
+  Page, Layout, Card, BlockStack, TextField, Text, Banner, InlineStack, Box, RangeSlider,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
@@ -22,17 +22,17 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const form = await request.formData();
-  const data = JSON.parse(String(form.get("payload")));
+  const data = JSON.parse(String(form.get("payload") || "{}"));
   await db.shop.update({
     where: { shop: session.shop },
     data: {
-      widgetTitle: data.widgetTitle,
+      widgetTitle: data.widgetTitle || "Frequently bought together",
       widgetSubtitle: data.widgetSubtitle || null,
-      widgetCtaLabel: data.widgetCtaLabel,
-      widgetAccentColor: data.widgetAccentColor,
-      widgetTextColor: data.widgetTextColor,
-      widgetBorderRadius: data.widgetBorderRadius,
-      widgetFontFamily: data.widgetFontFamily,
+      widgetCtaLabel: data.widgetCtaLabel || "Add bundle to cart",
+      widgetAccentColor: data.widgetAccentColor || "#000000",
+      widgetTextColor: data.widgetTextColor || "#202020",
+      widgetBorderRadius: Number(data.widgetBorderRadius) || 8,
+      widgetFontFamily: data.widgetFontFamily || "inherit",
     },
   });
   return json({ ok: true });
@@ -53,18 +53,29 @@ export default function Customize() {
 
   const save = () => {
     const fd = new FormData();
-    fd.append("payload", JSON.stringify({
-      widgetTitle: title, widgetSubtitle: subtitle, widgetCtaLabel: cta,
-      widgetAccentColor: accent, widgetTextColor: textColor,
-      widgetBorderRadius: radius, widgetFontFamily: font,
-    }));
+    fd.append(
+      "payload",
+      JSON.stringify({
+        widgetTitle: title,
+        widgetSubtitle: subtitle,
+        widgetCtaLabel: cta,
+        widgetAccentColor: accent,
+        widgetTextColor: textColor,
+        widgetBorderRadius: radius,
+        widgetFontFamily: font,
+      }),
+    );
     submit(fd, { method: "post" });
   };
 
   return (
     <Page title="Customize widget" primaryAction={{ content: "Save", onAction: save }}>
       <TitleBar title="Customize widget" />
-      {actionData?.ok && <Box paddingBlockEnd="400"><Banner tone="success" title="Saved" /></Box>}
+      {actionData?.ok && (
+        <Box paddingBlockEnd="400">
+          <Banner tone="success" title="Saved" />
+        </Box>
+      )}
 
       <Layout>
         <Layout.Section>
@@ -77,13 +88,16 @@ export default function Customize() {
                 <TextField label="CTA button label" value={cta} onChange={setCta} autoComplete="off" />
               </BlockStack>
             </Card>
-
             <Card>
               <BlockStack gap="300">
                 <Text as="h3" variant="headingSm">Appearance</Text>
                 <InlineStack gap="300">
-                  <Box minWidth="200px"><TextField label="Accent / button color" value={accent} onChange={setAccent} autoComplete="off" /></Box>
-                  <Box minWidth="200px"><TextField label="Text color" value={textColor} onChange={setTextColor} autoComplete="off" /></Box>
+                  <Box minWidth="200px">
+                    <TextField label="Accent / button color" value={accent} onChange={setAccent} autoComplete="off" />
+                  </Box>
+                  <Box minWidth="200px">
+                    <TextField label="Text color" value={textColor} onChange={setTextColor} autoComplete="off" />
+                  </Box>
                 </InlineStack>
                 <RangeSlider label="Border radius (px)" value={radius} min={0} max={24} onChange={(v) => setRadius(Number(v))} />
                 <TextField label="Font family" value={font} onChange={setFont} helpText="Use 'inherit' to match the theme." autoComplete="off" />
@@ -96,33 +110,39 @@ export default function Customize() {
           <Card>
             <BlockStack gap="300">
               <Text as="h3" variant="headingSm">Preview</Text>
-              <Preview title={title} subtitle={subtitle} cta={cta} accent={accent} textColor={textColor} radius={radius} font={font} />
+              <div
+                style={{
+                  border: "1px solid #e3e3e3",
+                  borderRadius: radius,
+                  padding: 16,
+                  fontFamily: font,
+                  color: textColor,
+                  background: "#fff",
+                }}
+              >
+                <div style={{ fontWeight: 700, fontSize: 15 }}>{title}</div>
+                {subtitle && (
+                  <div style={{ fontSize: 12, color: "#707070", marginTop: 2 }}>{subtitle}</div>
+                )}
+                <div style={{ border: "1px solid #e3e3e3", borderRadius: radius, padding: 10, margin: "10px 0", fontSize: 13 }}>
+                  Product A — $25.00
+                </div>
+                <div style={{ border: "1px solid #e3e3e3", borderRadius: radius, padding: 10, margin: "10px 0", fontSize: 13 }}>
+                  Product B — $15.00
+                </div>
+                <button
+                  style={{
+                    width: "100%", padding: "12px", background: accent, color: "#fff",
+                    border: 0, borderRadius: radius, fontWeight: 600, cursor: "pointer",
+                  }}
+                >
+                  {cta}
+                </button>
+              </div>
             </BlockStack>
           </Card>
         </Layout.Section>
       </Layout>
     </Page>
-  );
-}
-
-function Preview(p: { title: string; subtitle: string; cta: string; accent: string; textColor: string; radius: number; font: string }) {
-  return (
-    <div style={{
-      border: "1px solid #e3e3e3",
-      borderRadius: p.radius,
-      padding: 16,
-      fontFamily: p.font,
-      color: p.textColor,
-      background: "#fff",
-    }}>
-      <div style={{ fontWeight: 700, fontSize: 15 }}>{p.title}</div>
-      {p.subtitle && <div style={{ fontSize: 12, color: "#707070", marginTop: 2 }}>{p.subtitle}</div>}
-      <div style={{ border: "1px solid #e3e3e3", borderRadius: p.radius, padding: 10, margin: "10px 0", fontSize: 13 }}>Product A — $25.00</div>
-      <div style={{ border: "1px solid #e3e3e3", borderRadius: p.radius, padding: 10, margin: "10px 0", fontSize: 13 }}>Product B — $15.00</div>
-      <button style={{
-        width: "100%", padding: "12px", background: p.accent, color: "#fff",
-        border: 0, borderRadius: p.radius, fontWeight: 600, cursor: "pointer",
-      }}>{p.cta}</button>
-    </div>
   );
 }
