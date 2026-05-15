@@ -1,7 +1,8 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
-import { Link, useLoaderData } from "@remix-run/react";
+import { useLoaderData, useNavigate } from "@remix-run/react";
 import {
-  Page, Layout, Card, BlockStack, InlineStack, Text, Button, Badge, Icon, Box,
+  Page, Layout, Card, BlockStack, InlineStack,
+  Text, Button, Badge, Icon, Box,
 } from "@shopify/polaris";
 import { CheckCircleIcon, InfoIcon } from "@shopify/polaris-icons";
 import { TitleBar } from "@shopify/app-bridge-react";
@@ -25,11 +26,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     shop,
     campaignCount,
     shopDomain: session.shop,
+    plan: shop.plan ?? "free", // ✅ Step 1: plan ko loader se return karo
   };
 };
 
 export default function Index() {
-  const { shop, campaignCount, shopDomain } = useLoaderData<typeof loader>();
+  // ✅ Step 2: plan ko destructure karo
+  const { shop, campaignCount, shopDomain, plan } = useLoaderData<typeof loader>();
+  const navigate = useNavigate();
 
   const steps = [
     {
@@ -69,9 +73,105 @@ export default function Index() {
 
   const completed = steps.filter((s) => s.done).length;
 
+  // ✅ Step 3: condition ab kaam karegi kyunki plan available hai
+  const isFreePlan    = plan === "free";
+  const isBasicPlan   = plan === "basic";
+  const isAdvancedPlan = plan === "advanced";
+
   return (
     <Page>
       <TitleBar title="Dashboard" />
+
+      {/* ✅ Condition: Free plan walo ko upgrade banner dikhao */}
+      {isFreePlan && (
+        <div style={{
+          background: "linear-gradient(135deg, #1a1f6e, #4f6af0)",
+          borderRadius: "12px",
+          padding: "20px 24px",
+          marginBottom: "20px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: "12px",
+        }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: "15px", color: "#fff", marginBottom: "4px" }}>
+              🚀 You're on the Free Plan
+            </div>
+            <div style={{ fontSize: "13px", color: "rgba(255,255,255,0.75)" }}>
+              Upgrade to unlock campaigns, analytics & more.
+            </div>
+          </div>
+          <button
+            onClick={() => navigate("/app/plans")}
+            style={{
+              background: "#ffffff",
+              color: "#1a2fb8",
+              border: "none",
+              borderRadius: "8px",
+              padding: "10px 20px",
+              fontWeight: 700,
+              cursor: "pointer",
+              fontSize: "13px",
+              whiteSpace: "nowrap",
+            }}
+          >
+            View Plans →
+          </button>
+        </div>
+      )}
+
+      {/* ✅ Condition: Basic plan walo ko advanced upgrade hint dikhao */}
+      {isBasicPlan && (
+        <div style={{
+          background: "linear-gradient(135deg, #fef3c7, #fde68a)",
+          border: "1px solid #f59e0b",
+          borderRadius: "12px",
+          padding: "14px 20px",
+          marginBottom: "20px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: "12px",
+        }}>
+          <div style={{ fontSize: "13.5px", color: "#92400e", fontWeight: 600 }}>
+            ⭐ Upgrade to Advanced for unlimited campaigns & priority support
+          </div>
+          <button
+            onClick={() => navigate("/app/plans")}
+            style={{
+              background: "#f59e0b",
+              color: "#fff",
+              border: "none",
+              borderRadius: "8px",
+              padding: "8px 16px",
+              fontWeight: 700,
+              cursor: "pointer",
+              fontSize: "12.5px",
+            }}
+          >
+            Upgrade →
+          </button>
+        </div>
+      )}
+
+      {/* ✅ Condition: Advanced plan walo ko appreciation dikhao */}
+      {isAdvancedPlan && (
+        <div style={{
+          background: "linear-gradient(135deg, #f0fdf4, #dcfce7)",
+          border: "1px solid #86efac",
+          borderRadius: "12px",
+          padding: "14px 20px",
+          marginBottom: "20px",
+        }}>
+          <div style={{ fontSize: "13.5px", color: "#166534", fontWeight: 600 }}>
+            ✅ Advanced Plan Active — You have access to all features!
+          </div>
+        </div>
+      )}
+
       <Layout>
         <Layout.Section>
           <Card>
@@ -97,9 +197,9 @@ export default function Index() {
                     <InlineStack gap="400" align="space-between" blockAlign="center">
                       <InlineStack gap="300" blockAlign="center">
                         <Icon
-                            source={step.done ? CheckCircleIcon : InfoIcon}
-                            tone={step.done ? "success" : "subdued"}
-                          />
+                          source={step.done ? CheckCircleIcon : InfoIcon}
+                          tone={step.done ? "success" : "subdued"}
+                        />
                         <BlockStack gap="100">
                           <Text as="h3" variant="headingSm">{step.title}</Text>
                           <Text as="p" tone="subdued">{step.description}</Text>
@@ -117,14 +217,24 @@ export default function Index() {
         <Layout.Section>
           <Card>
             <BlockStack gap="400">
-              <Text as="h2" variant="headingMd">Get started with your first upsell campaign!</Text>
+              <Text as="h2" variant="headingMd">
+                Get started with your first upsell campaign!
+              </Text>
               <Text as="p" tone="subdued">
-                Create bundles, add-ons, and upsells across cart, checkout, and post-purchase pages — in just a few steps.
+                Create bundles, add-ons, and upsells across cart, checkout, and
+                post-purchase pages — in just a few steps.
               </Text>
               <InlineStack>
-                <Button url="/app/campaigns/new" variant="primary">
-                  Create your first campaign
-                </Button>
+                {/* ✅ Condition: Free plan hai to button disabled karo */}
+                {isFreePlan ? (
+                  <Button disabled>
+                    Upgrade to create campaigns
+                  </Button>
+                ) : (
+                  <Button url="/app/campaigns/new" variant="primary">
+                    Create your first campaign
+                  </Button>
+                )}
               </InlineStack>
             </BlockStack>
           </Card>

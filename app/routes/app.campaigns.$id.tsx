@@ -1,3 +1,5 @@
+// FILE: app/routes/app.campaigns.$id.tsx
+
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { useActionData, useLoaderData, useSubmit } from "@remix-run/react";
@@ -34,7 +36,11 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 
   const shopRow = await db.shop.findUnique({ where: { shop: session.shop } });
 
-  return { campaign, shopTimezone: shopRow?.timezone || "America/New_York" };
+  return {
+    campaign,
+    shopTimezone: shopRow?.timezone || "America/New_York",
+    plan: shopRow?.plan ?? "free", // ✅ Pass plan to frontend
+  };
 };
 
 export const action = async ({ request, params }: ActionFunctionArgs) => {
@@ -177,7 +183,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 };
 
 export default function CampaignEditor() {
-  const { campaign, shopTimezone } = useLoaderData<typeof loader>();
+  const { campaign, shopTimezone, plan } = useLoaderData<typeof loader>(); // ✅ get plan
   const actionData = useActionData<typeof action>();
   const shopify = useAppBridge();
   const submit = useSubmit();
@@ -357,9 +363,7 @@ export default function CampaignEditor() {
 
             <Card>
               <BlockStack gap="300">
-                <Text as="h3" variant="headingSm">
-                  Trigger
-                </Text>
+                <Text as="h3" variant="headingSm">Trigger</Text>
                 <Text as="p" tone="subdued">
                   Select the products or collections that trigger this campaign.
                 </Text>
@@ -377,9 +381,7 @@ export default function CampaignEditor() {
                   <ResourceList
                     items={triggers}
                     onAdd={() => pickProducts("trigger")}
-                    onRemove={(id) =>
-                      setTriggers((p) => p.filter((x) => x.id !== id))
-                    }
+                    onRemove={(id) => setTriggers((p) => p.filter((x) => x.id !== id))}
                     addLabel="Browse products"
                   />
                 )}
@@ -387,9 +389,7 @@ export default function CampaignEditor() {
                   <ResourceList
                     items={triggers}
                     onAdd={pickCollections}
-                    onRemove={(id) =>
-                      setTriggers((p) => p.filter((x) => x.id !== id))
-                    }
+                    onRemove={(id) => setTriggers((p) => p.filter((x) => x.id !== id))}
                     addLabel="Browse collections"
                   />
                 )}
@@ -398,18 +398,14 @@ export default function CampaignEditor() {
 
             <Card>
               <BlockStack gap="300">
-                <Text as="h3" variant="headingSm">
-                  Offers
-                </Text>
+                <Text as="h3" variant="headingSm">Offers</Text>
                 <Text as="p" tone="subdued">
                   The selected products will be offered as a bundle along with the trigger.
                 </Text>
                 <ResourceList
                   items={offers}
                   onAdd={() => pickProducts("offer")}
-                  onRemove={(id) =>
-                    setOffers((p) => p.filter((x) => x.id !== id))
-                  }
+                  onRemove={(id) => setOffers((p) => p.filter((x) => x.id !== id))}
                   addLabel="Browse products"
                 />
               </BlockStack>
@@ -417,9 +413,7 @@ export default function CampaignEditor() {
 
             <Card>
               <BlockStack gap="300">
-                <Text as="h3" variant="headingSm">
-                  Campaign settings
-                </Text>
+                <Text as="h3" variant="headingSm">Campaign settings</Text>
                 <Checkbox
                   label="Show quantity picker"
                   checked={showQuantityPicker}
@@ -466,9 +460,7 @@ export default function CampaignEditor() {
 
             <Card>
               <BlockStack gap="300">
-                <Text as="h3" variant="headingSm">
-                  Discounts
-                </Text>
+                <Text as="h3" variant="headingSm">Discounts</Text>
                 <Select
                   label="Type"
                   options={[
@@ -499,12 +491,8 @@ export default function CampaignEditor() {
             <Card>
               <BlockStack gap="300">
                 <InlineStack align="space-between">
-                  <Text as="h3" variant="headingSm">
-                    Schedule campaign
-                  </Text>
-                  <Text as="span" tone="subdued">
-                    {timezone}
-                  </Text>
+                  <Text as="h3" variant="headingSm">Schedule campaign</Text>
+                  <Text as="span" tone="subdued">{timezone}</Text>
                 </InlineStack>
                 <Text as="p" tone="subdued">
                   Choose start and end dates to control when the campaign is live.
@@ -563,9 +551,7 @@ export default function CampaignEditor() {
 
             <Card>
               <BlockStack gap="300">
-                <Text as="h3" variant="headingSm">
-                  Other settings
-                </Text>
+                <Text as="h3" variant="headingSm">Other settings</Text>
                 <TextField
                   label="Campaign title"
                   value={title}
@@ -598,8 +584,8 @@ export default function CampaignEditor() {
               <Select
                 label="Status"
                 options={[
-                  { label: "Draft", value: "DRAFT" },
                   { label: "Active", value: "ACTIVE" },
+                  { label: "Draft", value: "DRAFT" },
                   { label: "Paused", value: "PAUSED" },
                 ]}
                 value={status}
@@ -609,16 +595,24 @@ export default function CampaignEditor() {
           </BlockStack>
         </Layout.Section>
 
+        {/* ✅ Sidebar — Customize widget gated by plan */}
         <Layout.Section variant="oneThird">
           <Card>
             <BlockStack gap="300">
-              <Text as="h3" variant="headingSm">
-                Customize appearance
-              </Text>
+              <Text as="h3" variant="headingSm">Customize appearance</Text>
               <Text as="p" tone="subdued">
                 The styling, text, and translations can be customised from the widget settings.
               </Text>
-              <Button url="/app/customize">Customize widget</Button>
+
+              {plan === "free" ? (
+                // Free plan: redirect to upgrade
+                <Button url="/app/plans" variant="plain">
+                  🔒 Upgrade to customize widget
+                </Button>
+              ) : (
+                // Basic or Advanced: full access
+                <Button url="/app/customize">Customize widget</Button>
+              )}
             </BlockStack>
           </Card>
         </Layout.Section>
@@ -626,6 +620,8 @@ export default function CampaignEditor() {
     </Page>
   );
 }
+
+// ─── Sub-components ──────────────────────────────────────────────────────────
 
 function ResourceList({
   items, onAdd, onRemove, addLabel,
@@ -672,9 +668,7 @@ function TierEditor({ tiers, onChange }: { tiers: Tier[]; onChange: (t: Tier[]) 
 
   return (
     <BlockStack gap="300">
-      <Text as="p" tone="subdued">
-        Configure discount tiers, e.g. "Buy 4, get 25%".
-      </Text>
+      <Text as="p" tone="subdued">Configure discount tiers, e.g. "Buy 4, get 25%".</Text>
       {tiers.map((t, i) => (
         <Box key={i} padding="300" background="bg-surface-secondary" borderRadius="200">
           <InlineStack gap="200" align="space-between" blockAlign="end">
@@ -725,6 +719,8 @@ function TierEditor({ tiers, onChange }: { tiers: Tier[]; onChange: (t: Tier[]) 
     </BlockStack>
   );
 }
+
+// ─── Utilities ───────────────────────────────────────────────────────────────
 
 function dedupe(arr: PickedResource[]): PickedResource[] {
   const seen = new Set<string>();

@@ -2,6 +2,7 @@ import "@shopify/shopify-app-remix/adapters/node";
 import {
   ApiVersion,
   AppDistribution,
+  BillingInterval,
   shopifyApp,
 } from "@shopify/shopify-app-remix/server";
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
@@ -16,6 +17,33 @@ const shopify = shopifyApp({
   authPathPrefix: "/auth",
   sessionStorage: new PrismaSessionStorage(prisma),
   distribution: AppDistribution.AppStore,
+
+  // ✅ Billing config — keys must match exactly what you pass to billing.request()
+  billing: {
+    basic: {
+      trialDays: 7,
+      lineItems: [
+        {
+          amount: 9.99,
+          currencyCode: "USD",
+          interval: BillingInterval.Every30Days,
+          name: "Basic Plan",        // 👈 shown on Shopify billing page
+        },
+      ],
+    },
+    advanced: {
+      trialDays: 7,
+      lineItems: [
+        {
+          amount: 17.99,
+          currencyCode: "USD",
+          interval: BillingInterval.Every30Days,
+          name: "Advanced Plan",     // 👈 shown on Shopify billing page
+        },
+      ],
+    },
+  },
+
   future: {
     unstable_newEmbeddedAuthStrategy: true,
     expiringOfflineAccessTokens: true,
