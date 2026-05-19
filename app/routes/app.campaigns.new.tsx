@@ -11,8 +11,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
 const TYPES = [
   { key: "FBT_LIST", title: "Frequently bought together (List)", description: "A pre-selected bundle in list format.", available: true, preview: "list" },
-  // { key: "FBT_AMAZON", title: "Frequently bought together (Amazon)", description: "A horizontal bundle in Amazon style.", available: true, preview: "amazon" },
-  // { key: "FBT_CLASSIC", title: "Frequently bought together (Classic)", description: "A grid layout with horizontal product row.", available: true, preview: "classic" },
+   { key: "FBT_AMAZON", title: "Frequently bought together (Amazon)", description: "A horizontal bundle in Amazon style.", available: true, preview: "amazon" },
+   { key: "FBT_CLASSIC", title: "Frequently bought together (Classic)", description: "A grid layout with horizontal product row.", available: true, preview: "classic" },
 ] as const;
 
 export default function NewCampaign() {

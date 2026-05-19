@@ -1,29 +1,35 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { redirect } from "@remix-run/node";
-import { authenticate } from "../shopify.server";
-import db from "../db.server";
 
-const VALID_PLANS = ["basic", "advanced"] as const;
+import {
+  authenticate,
+  BASIC_PLAN,
+  ADVANCED_PLAN,
+} from "../shopify.server";
+
+import db from "../db.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const { billing, session } = await authenticate.admin(request);
 
-  // Verify active subscription
+  // ✅ Verify subscription from Shopify
   const billingCheck = await billing.check({
-    plans: [...VALID_PLANS],
-    isTest: true, // Remove in production
+    plans: [BASIC_PLAN, ADVANCED_PLAN],
+    isTest: true, // remove in production
   });
 
-  // No payment approved
+  // ❌ No active payment
   if (!billingCheck.hasActivePayment) {
     return redirect("/app/plans");
   }
 
-  // Detect actual active plan from Shopify
+  // ✅ Get active subscriptions
   const subscriptions = billingCheck.appSubscriptions || [];
 
-  let activePlan: "basic" | "advanced" = "basic";
+  // Default plan
+  let activePlan = "basic";
 
+  // Detect advanced plan
   const hasAdvanced = subscriptions.some((sub) =>
     sub.name.toLowerCase().includes("advanced")
   );
@@ -32,17 +38,26 @@ export async function loader({ request }: LoaderFunctionArgs) {
     activePlan = "advanced";
   }
 
-  // Update DB safely
+  // ✅ Save/update DB
   await db.shop.upsert({
-    where: { shop: session.shop },
+    where: {
+      shop: session.shop,
+    },
+
     update: {
       plan: activePlan,
     },
+
     create: {
       shop: session.shop,
       plan: activePlan,
     },
   });
 
+  console.log(
+    `✅ Subscription synced | Shop: ${session.shop} | Plan: ${activePlan}`
+  );
+
+  // ✅ Redirect after successful verification
   return redirect("/app");
 }
