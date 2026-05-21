@@ -12,6 +12,11 @@ import db from "../db.server";
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
 
+  const url = new URL(request.url);
+  const host = url.searchParams.get("host");
+
+
+
   const shop = await db.shop.upsert({
     where: { shop: session.shop },
     update: {},
@@ -27,12 +32,20 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     campaignCount,
     shopDomain: session.shop,
     plan: shop.plan ?? "free", // ✅ Step 1: plan ko loader se return karo
+    host,
   };
 };
 
 export default function Index() {
   // ✅ Step 2: plan ko destructure karo
-  const { shop, campaignCount, shopDomain, plan } = useLoaderData<typeof loader>();
+  const {
+  shop,
+  campaignCount,
+  shopDomain,
+  plan,
+  host,
+
+} = useLoaderData<typeof loader>();
   const navigate = useNavigate();
 
   const steps = [
@@ -57,7 +70,10 @@ export default function Index() {
       description: "Launch a Frequently Bought Together bundle.",
       done: campaignCount > 0,
       cta: (
-        <Button url="/app/campaigns/new" variant="primary">
+        <Button
+  url={`/app/campaigns/new?host=${host}&shop=${shopDomain}`}
+  variant="primary"
+>
           Create campaign
         </Button>
       ),
@@ -67,7 +83,9 @@ export default function Index() {
       title: "Verify your store setup",
       description: "Test that the widget shows on a product page.",
       done: shop.storeVerified,
-      cta: <Button url="/app/campaigns">Test in store</Button>,
+      cta: <Button
+  url={`/app/campaigns`}
+>Test in store</Button>,
     },
   ];
 
@@ -103,22 +121,12 @@ export default function Index() {
               Upgrade to unlock campaigns, analytics & more.
             </div>
           </div>
-          <button
-            onClick={() => navigate("/app/plans")}
-            style={{
-              background: "#ffffff",
-              color: "#1a2fb8",
-              border: "none",
-              borderRadius: "8px",
-              padding: "10px 20px",
-              fontWeight: 700,
-              cursor: "pointer",
-              fontSize: "13px",
-              whiteSpace: "nowrap",
-            }}
+          <Button
+            url={`/app/plans?shop=${shopDomain}&host=${host}`}
+            variant="primary"
           >
             View Plans →
-          </button>
+          </Button>
         </div>
       )}
 
@@ -139,21 +147,12 @@ export default function Index() {
           <div style={{ fontSize: "13.5px", color: "#92400e", fontWeight: 600 }}>
             ⭐ Upgrade to Advanced for unlimited campaigns & priority support
           </div>
-          <button
-            onClick={() => navigate("/app/plans")}
-            style={{
-              background: "#f59e0b",
-              color: "#fff",
-              border: "none",
-              borderRadius: "8px",
-              padding: "8px 16px",
-              fontWeight: 700,
-              cursor: "pointer",
-              fontSize: "12.5px",
-            }}
+          <Button
+            url={`/app/plans?shop=${shopDomain}&host=${host}`}
+            variant="primary"
           >
             Upgrade →
-          </button>
+          </Button>
         </div>
       )}
 
@@ -231,7 +230,10 @@ export default function Index() {
                     Upgrade to create campaigns
                   </Button>
                 ) : (
-                  <Button url="/app/campaigns/new" variant="primary">
+                  <Button
+  url={`/app/campaigns/new`}
+  variant="primary"
+>
                     Create your first campaign
                   </Button>
                 )}
