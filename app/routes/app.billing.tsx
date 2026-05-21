@@ -29,9 +29,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // ✅ Get host safely
   const host = url.searchParams.get("host");
 
-  if (!host) {
-    throw new Error("Missing host parameter");
-  }
+  if (!host || host === "null") {
+  return redirect(`/app/plans?shop=${session.shop}`);
+}
 
   // ✅ Build callback URL
   const returnUrl = new URL(
@@ -41,20 +41,18 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   returnUrl.searchParams.set("shop", session.shop);
   returnUrl.searchParams.set("host", host);
-  returnUrl.searchParams.set("embedded", "1");
   returnUrl.searchParams.set("plan", selectedPlan);
 
   console.log(
     `🚀 Billing request started | Shop: ${session.shop} | Plan: ${selectedPlan}`
   );
 
-  // ✅ Request billing and capture the response
-  const { confirmationUrl } = await billing.request({
+  // ✅ Redirects automatically to Shopify billing page
+  await billing.request({
     plan: PLAN_MAP[selectedPlan],
     isTest: true, // remove in production
     returnUrl: returnUrl.toString(),
   });
 
-  // ✅ Redirect to Shopify's billing page
-  return redirect(confirmationUrl);
+  return null;
 }

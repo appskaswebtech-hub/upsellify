@@ -1,40 +1,63 @@
-import { type LoaderFunctionArgs, redirect } from "@remix-run/node";
-import { useNavigate, useLoaderData } from "@remix-run/react";
-import { useEffect } from "react";
-import { authenticate, BASIC_PLAN, ADVANCED_PLAN } from "../shopify.server";
+import type { LoaderFunctionArgs } from "@remix-run/node";
+import { redirect } from "@remix-run/node";
 
-export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { billing } = await authenticate.admin(request);
+import {
+  authenticate,
+  BASIC_PLAN,
+  ADVANCED_PLAN,
+} from "../shopify.server";
 
-  const billingCheck = await billing.require({
+import db from "../db.server";
+
+export async function loader({ request }: LoaderFunctionArgs) {
+  const { billing, session } = await authenticate.admin(request);
+
+  // ✅ Verify subscription from Shopify
+  const billingCheck = await billing.check({
     plans: [BASIC_PLAN, ADVANCED_PLAN],
-    onFailure: async () => redirect("/app/plans"),
+    isTest: true, // remove in production
   });
 
-  const activePlan = billingCheck?.appSubscriptions?.[0]?.name || "basic";
+  // ❌ No active payment
+  if (!billingCheck.hasActivePayment) {
+    return redirect("/app/plans");
+  }
 
-  return { plan: activePlan };
-};
+  // ✅ Get active subscriptions
+  const subscriptions = billingCheck.appSubscriptions || [];
 
-export default function BillingCallback() {
-  const { plan } = useLoaderData<typeof loader>();
-  const navigate = useNavigate();
+  // Default plan
+  let activePlan = "basic";
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      navigate("/app", { replace: true });
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [navigate]);
-
-  return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh" }}>
-      <div style={{ textAlign: "center", padding: "40px" }}>
-        <div style={{ fontSize: "48px", marginBottom: "16px" }}>✓</div>
-        <h1 style={{ fontSize: "20px", fontWeight: 600, marginBottom: "8px" }}>Payment Successful!</h1>
-        <p style={{ fontSize: "14px", color: "#666" }}>You're on the {plan} plan</p>
-        <p style={{ fontSize: "12px", color: "#999", marginTop: "16px" }}>Redirecting...</p>
-      </div>
-    </div>
+  // Detect advanced plan
+  const hasAdvanced = subscriptions.some((sub) =>
+    sub.name.toLowerCase().includes("advanced")
   );
+
+  if (hasAdvanced) {
+    activePlan = "advanced";
+  }
+
+  // ✅ Save/update DB
+  await db.shop.upsert({
+    where: {
+      shop: session.shop,
+    },
+
+    update: {
+      plan: activePlan,
+    },
+
+    create: {
+      shop: session.shop,
+      plan: activePlan,
+    },
+  });
+
+  console.log(
+    `✅ Subscription synced | Shop: ${session.shop} | Plan: ${activePlan}`
+  );
+
+  // ✅ Redirect after successful verification
+  return redirect("/app");
 }
