@@ -21,12 +21,10 @@ api_version = "2026-07"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "write_products,read_products,write_discounts,read_discounts,write_orders,read_orders,read_themes"
+scopes = "read_discounts,read_orders,read_products,read_themes,write_discounts,write_orders,write_products"
 
 [auth]
-redirect_urls = [
-  "https://upsellify.kaswebtechsolutions.com/api/auth"
-]
+redirect_urls = [ "https://upsellify.kaswebtechsolutions.com/api/auth" ]
 
 [app_proxy]
 url = "https://upsellify.kaswebtechsolutions.com/apps/selleasy"

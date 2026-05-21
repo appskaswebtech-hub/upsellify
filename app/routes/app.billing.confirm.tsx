@@ -10,6 +10,7 @@ import {
 import db from "../db.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
+  // ✅ Authenticate admin
   const { billing, session } = await authenticate.admin(request);
 
   // ✅ Verify subscription from Shopify
@@ -18,23 +19,28 @@ export async function loader({ request }: LoaderFunctionArgs) {
     isTest: true, // remove in production
   });
 
+  console.log("✅ Billing Check:", billingCheck);
+
   // ❌ No active payment
   if (!billingCheck.hasActivePayment) {
+    console.log("❌ No active subscription found");
+
     return redirect("/app/plans");
   }
 
   // ✅ Get active subscriptions
   const subscriptions = billingCheck.appSubscriptions || [];
 
-  // Default plan
-  let activePlan = "basic";
+  console.log("✅ Active Subscriptions:", subscriptions);
 
-  // Detect advanced plan
-  const hasAdvanced = subscriptions.some((sub) =>
-    sub.name.toLowerCase().includes("advanced")
-  );
+  // ✅ Default plan
+  let activePlan: "basic" | "advanced" = "basic";
 
-  if (hasAdvanced) {
+  // ✅ Get current subscription
+  const activeSubscription = subscriptions[0];
+
+  // ✅ Detect advanced plan
+  if (activeSubscription?.name === ADVANCED_PLAN) {
     activePlan = "advanced";
   }
 
