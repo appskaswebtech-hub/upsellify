@@ -21,10 +21,13 @@ import db from "../db.server";
 // =========================
 // CAMPAIGN LIMITS
 // =========================
+// free     → 1 campaign
+// basic    → 5 campaigns
+// advanced → unlimited
 
 const CAMPAIGN_LIMITS: Record<string, number> = {
   free: 1,
-  basic: 10,
+  basic: 5,
   advanced: Infinity,
 };
 
@@ -55,20 +58,28 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     },
   });
 
-  // ✅ GET SHOP PLAN
-  const shop = await db.shop.upsert({
+  // ✅ GET SHOP PLAN (from ShopPlan model)
+  const shopPlan = await db.shopPlan.upsert({
     where: {
       shop: session.shop,
     },
     update: {},
     create: {
       shop: session.shop,
+      plan: "free",
+      status: "active",
     },
   });
 
+  // If the plan is not active (cancelled/expired), fall back to free limits
+  const effectivePlan =
+    shopPlan.status === "active" ? shopPlan.plan : "free";
+
   return {
     campaigns,
-    plan: shop.plan ?? "free",
+    plan: effectivePlan,
+    rawPlan: shopPlan.plan,
+    status: shopPlan.status,
   };
 };
 
@@ -85,11 +96,14 @@ export default function Campaigns() {
   // LIMITS
   // =========================
 
-  const limit = CAMPAIGN_LIMITS[plan];
+  // Defensive fallback: if an unknown plan slips in, treat as free
+  const limit = CAMPAIGN_LIMITS[plan] ?? CAMPAIGN_LIMITS.free;
 
   const totalCampaigns = campaigns.length;
 
   const canCreate = totalCampaigns < limit;
+
+  const limitLabel = limit === Infinity ? "Unlimited" : limit;
 
   // =========================
   // EMPTY STATE
@@ -113,49 +127,19 @@ export default function Campaigns() {
               <Text as="p" variant="bodyMd">
                 Campaign Usage:{" "}
                 <strong>
-                  {totalCampaigns} / {
-                    limit === Infinity
-                      ? "Unlimited"
-                      : limit
-                  }
+                  {totalCampaigns} / {limitLabel}
                 </strong>
               </Text>
             </InlineStack>
           </Card>
         </Box>
 
-        {!canCreate && (
-          <Box paddingBlockEnd="400">
-            <Banner
-              tone="warning"
-              title="Campaign limit reached"
-              action={{
-                content: "Upgrade Plan",
-                onAction: () => navigate("/app/plans"),
-              }}
-            >
-              <p>
-                Your current plan has reached the maximum campaign limit.
-                Upgrade your plan to create more campaigns.
-              </p>
-            </Banner>
-          </Box>
-        )}
-
         <Card>
           <EmptyState
             heading="Create your first campaign"
             action={{
-              content: canCreate
-                ? "Create campaign"
-                : "Upgrade plan",
-              onAction: () => {
-                if (canCreate) {
-                  navigate("/app/campaigns/new");
-                } else {
-                  navigate("/app/plans");
-                }
-              },
+              content: "Create campaign",
+              onAction: () => navigate("/app/campaigns/new"),
             }}
             image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
           >
@@ -176,17 +160,13 @@ export default function Campaigns() {
     <Page
       title="Campaigns"
       primaryAction={{
-        content: canCreate
-          ? "Create campaign"
-          : "Upgrade plan",
-
-        disabled: !canCreate,
-
+        content: canCreate ? "Create campaign" : "Upgrade plan",
+        disabled: false,
         onAction: () => {
           if (canCreate) {
             navigate("/app/campaigns/new");
           } else {
-            navigate("/app/plans");
+            navigate("/app/billing");
           }
         },
       }}
@@ -210,24 +190,45 @@ export default function Campaigns() {
             <Text as="p" variant="bodyMd">
               Campaign Usage:{" "}
               <strong>
-                {totalCampaigns} / {
-                  limit === Infinity
-                    ? "Unlimited"
-                    : limit
-                }
+                {totalCampaigns} / {limitLabel}
               </strong>
             </Text>
           </InlineStack>
-
-          {!canCreate && (
-            <Box paddingBlockStart="300">
-              <Text as="p" tone="critical">
-                Campaign limit reached. Upgrade your plan to create more campaigns.
-              </Text>
-            </Box>
-          )}
         </Card>
       </Box>
+
+      {/* ========================= */}
+      {/* LIMIT REACHED BANNER */}
+      {/* ========================= */}
+
+      {!canCreate && (
+        <Box paddingBlockEnd="400">
+          <Banner
+            tone="warning"
+            title={
+              plan === "free"
+                ? "You've used your free campaign"
+                : "Campaign limit reached"
+            }
+            action={{
+              content:
+                plan === "advanced"
+                  ? "Contact support"
+                  : "Upgrade plan",
+              onAction: () => navigate("/app/billing"),
+            }}
+          >
+            <p>
+              {plan === "free" &&
+                "The Free plan includes 1 campaign. Upgrade to Basic for 5 campaigns or Advanced for unlimited."}
+              {plan === "basic" &&
+                "The Basic plan includes 5 campaigns. Upgrade to Advanced for unlimited campaigns."}
+              {plan === "advanced" &&
+                "You've reached an unexpected limit on the Advanced plan."}
+            </p>
+          </Banner>
+        </Box>
+      )}
 
       {/* ========================= */}
       {/* TABLE */}

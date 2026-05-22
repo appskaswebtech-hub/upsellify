@@ -2,7 +2,7 @@
 
 client_id = "aa010260b4fcd0578d275ce4e61d3682"
 name = "Upsellify"
-application_url = "https://upsellify.kaswebtechsolutions.com"
+application_url = "https://johns-armstrong-shorter-digit.trycloudflare.com"
 embedded = true
 
 [build]
@@ -27,6 +27,6 @@ scopes = "read_discounts,read_orders,read_products,read_themes,write_discounts,w
 redirect_urls = [ "https://upsellify.kaswebtechsolutions.com/api/auth" ]
 
 [app_proxy]
-url = "https://upsellify.kaswebtechsolutions.com/apps/selleasy"
+url = "https://johns-armstrong-shorter-digit.trycloudflare.com/apps/selleasy"
 subpath = "selleasy"
 prefix = "apps"

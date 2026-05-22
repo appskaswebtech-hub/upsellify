@@ -69,7 +69,6 @@ const shopify = shopifyApp({
           currencyCode: "USD",
 
           interval: BillingInterval.Every30Days,
-
           name: "Advanced Plan",
         },
       ],
