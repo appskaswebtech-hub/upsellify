@@ -140,3 +140,72 @@
   border-radius: 4px; border: 1px solid #e3e3e3;
 }
 .sl-fbt__plus-small { font-size: 16px; color: #888; }
+
+
+
+
+/* Classic — image strip */
+.sl-fbt__classic-grid {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 4px 0 14px;
+}
+.sl-fbt__classic-tile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sl-fbt__classic-tile img {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid #d9d9d9;
+}
+.sl-fbt__plus-small {
+  font-size: 14px;
+  color: #b5b5b5;
+  font-weight: 500;
+}
+
+/* Classic — CTA above list */
+.sl-fbt__cta--classic {
+  margin-bottom: 14px;
+}
+
+/* Classic — slim rows (no thumbnails) */
+.sl-fbt__classic-list {
+  margin-bottom: 6px;
+}
+.sl-fbt__row--slim {
+  padding: 8px 10px;
+  gap: 8px;
+  border-color: #ececec;
+}
+.sl-fbt__row--slim.sl-fbt__row--trigger {
+  border-width: 1.5px;
+  border-color: var(--sl-accent);
+}
+.sl-fbt__row--slim .sl-fbt__name {
+  font-size: 13px;
+}
+.sl-fbt__row--slim .sl-fbt__variant {
+  font-size: 11px;
+  padding: 2px 5px;
+  max-width: 100px;
+}
+.sl-fbt__row--slim .sl-fbt__qty button {
+  width: 22px;
+  height: 22px;
+  font-size: 12px;
+}
+.sl-fbt__row--slim .sl-fbt__price {
+  font-size: 13px;
+}
+
+/* Classic — total */
+.sl-fbt__total--classic {
+  margin-top: 12px;
+}

@@ -110,6 +110,27 @@
 
   function render() {
     const c = state.campaign;
+
+    // Classic has its own layout - CTA goes above rows, custom structure
+    if (state.layoutType === "FBT_CLASSIC") {
+      state.mountEl.innerHTML = `
+        <div class="sl-fbt sl-fbt--classic">
+          <div class="sl-fbt__head">
+            <h3 class="sl-fbt__title">${escapeHtml(c.title)}</h3>
+            ${c.subtitle ? `<p class="sl-fbt__subtitle">${escapeHtml(c.subtitle)}</p>` : ""}
+          </div>
+          ${renderTierTabs()}
+          <div data-role="body"></div>
+          <div class="sl-fbt__error" data-role="error" hidden></div>
+        </div>
+      `;
+      wireTierTabs();
+      renderBody();
+      state.mountEl.querySelector("[data-role=cta]").addEventListener("click", addBundleToCart);
+      return;
+    }
+
+    // Default (List + Amazon)
     state.mountEl.innerHTML = `
       <div class="sl-fbt sl-fbt--${state.layoutType.toLowerCase().replace("fbt_", "")}">
         <div class="sl-fbt__head">
@@ -183,64 +204,108 @@
     });
   }
 
-  // function renderAmazonLayout(el) {
-  //   const all = [state.trigger, ...state.offers];
-  //   el.innerHTML = `
-  //     <div class="sl-fbt__amazon">
-  //       ${all.map((item, i) => {
-  //         const img = item.product.featured_image || item.product.images?.[0];
-  //         const isTrigger = i === 0;
-  //         return `
-  //           ${i > 0 ? `<span class="sl-fbt__amazon-plus">+</span>` : ""}
-  //           <div class="sl-fbt__amazon-item ${!item.selected && !isTrigger ? "is-unchecked" : ""}">
-  //             ${!isTrigger ? `
-  //               <label class="sl-fbt__check sl-fbt__check--overlay">
-  //                 <input type="checkbox" data-role="item-check" data-idx="${i - 1}" ${item.selected ? "checked" : ""} />
-  //                 <span class="sl-fbt__box"></span>
-  //               </label>` : ""}
-  //             ${img ? `<img src="${img}" alt="" />` : `<div class="sl-fbt__img--ph"></div>`}
-  //             <div class="sl-fbt__amazon-name">${escapeHtml(item.product.title)}</div>
-  //             <div class="sl-fbt__price">${priceHTML(getVariant(item.product, item.selectedVariantId))}</div>
-  //           </div>
-  //         `;
-  //       }).join("")}
-  //     </div>
-  //   `;
-  //   el.querySelectorAll("input[data-role=item-check]").forEach((cb) => {
-  //     cb.addEventListener("change", (e) => {
-  //       state.offers[Number(e.target.dataset.idx)].selected = e.target.checked;
-  //       renderBody();
-  //       renderTotal();
-  //     });
-  //   });
-  // }
+  function renderAmazonLayout(el) {
+    const all = [state.trigger, ...state.offers];
+    el.innerHTML = `
+      <div class="sl-fbt__amazon">
+        ${all.map((item, i) => {
+          const img = item.product.featured_image || item.product.images?.[0];
+          const isTrigger = i === 0;
+          return `
+            ${i > 0 ? `<span class="sl-fbt__amazon-plus">+</span>` : ""}
+            <div class="sl-fbt__amazon-item ${!item.selected && !isTrigger ? "is-unchecked" : ""}">
+              ${!isTrigger ? `
+                <label class="sl-fbt__check sl-fbt__check--overlay">
+                  <input type="checkbox" data-role="item-check" data-idx="${i - 1}" ${item.selected ? "checked" : ""} />
+                  <span class="sl-fbt__box"></span>
+                </label>` : ""}
+              ${img ? `<img src="${img}" alt="" />` : `<div class="sl-fbt__img--ph"></div>`}
+              <div class="sl-fbt__amazon-name">${escapeHtml(item.product.title)}</div>
+              <div class="sl-fbt__price">${priceHTML(getVariant(item.product, item.selectedVariantId))}</div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    `;
+    el.querySelectorAll("input[data-role=item-check]").forEach((cb) => {
+      cb.addEventListener("change", (e) => {
+        state.offers[Number(e.target.dataset.idx)].selected = e.target.checked;
+        renderBody();
+        renderTotal();
+      });
+    });
+  }
 
-  // function renderClassicLayout(el) {
-  //   el.innerHTML = `
-  //     <div class="sl-fbt__classic-grid">
-  //       ${[state.trigger, ...state.offers].map((item, i, arr) => {
-  //         const img = item.product.featured_image || item.product.images?.[0];
-  //         return `
-  //           <div class="sl-fbt__classic-tile">
-  //             ${img ? `<img src="${img}" alt="" />` : `<div class="sl-fbt__img--ph"></div>`}
-  //             ${i < arr.length - 1 ? `<span class="sl-fbt__plus-small">+</span>` : ""}
-  //           </div>
-  //         `;
-  //       }).join("")}
-  //     </div>
-  //     <div data-role="classic-list"></div>
-  //   `;
-  //   const list = el.querySelector("[data-role=classic-list]");
-  //   const tDiv = document.createElement("div");
-  //   list.appendChild(tDiv);
-  //   renderRow(tDiv, state.trigger, true);
-  //   state.offers.forEach((o, i) => {
-  //     const d = document.createElement("div");
-  //     d.style.marginTop = "8px";
-  //     list.appendChild(d);
-  //     renderRow(d, o, false, i);
-  //   });
-  // }
+  function renderClassicLayout(el) {
+    const c = state.campaign;
+
+    el.innerHTML = `
+      <div class="sl-fbt__classic-grid">
+        ${[state.trigger, ...state.offers].map((item, i, arr) => {
+          const img = item.product.featured_image || item.product.images?.[0];
+          return `
+            <div class="sl-fbt__classic-tile">
+              ${img ? `<img src="${img}" alt="" />` : `<div class="sl-fbt__img--ph"></div>`}
+              ${i < arr.length - 1 ? `<span class="sl-fbt__plus-small">+</span>` : ""}
+            </div>
+          `;
+        }).join("")}
+      </div>
+
+      <button class="sl-fbt__cta sl-fbt__cta--classic" type="button" data-role="cta">${escapeHtml(c.ctaLabel)}</button>
+
+      <div class="sl-fbt__classic-list" data-role="classic-list"></div>
+
+      <div class="sl-fbt__total sl-fbt__total--classic" data-role="total"></div>
+      <p class="sl-fbt__note">Selected items will be added to cart.</p>
+    `;
+
+    const list = el.querySelector("[data-role=classic-list]");
+
+    // Trigger row (outlined, no thumbnail)
+    const tDiv = document.createElement("div");
+    list.appendChild(tDiv);
+    renderClassicRow(tDiv, state.trigger, true);
+
+    // Offer rows (checkbox + name + price, no thumbnail)
+    state.offers.forEach((o, i) => {
+      const d = document.createElement("div");
+      d.style.marginTop = "6px";
+      list.appendChild(d);
+      renderClassicRow(d, o, false, i);
+    });
+
+    renderTotal();
+  }
+
+  function renderClassicRow(el, item, isTrigger, offerIdx) {
+    const s = state.campaign.settings || {};
+    const v = getVariant(item.product, item.selectedVariantId);
+    const canToggle = !isTrigger || s.allowDeselectTrigger;
+    const showQty = s.showQuantityPicker;
+
+    el.innerHTML = `
+      <div class="sl-fbt__row sl-fbt__row--slim ${isTrigger ? "sl-fbt__row--trigger" : ""} ${!item.selected ? "is-unchecked" : ""}">
+        ${canToggle ? `
+          <label class="sl-fbt__check">
+            <input type="checkbox" data-role="row-check" data-trigger="${isTrigger}" data-idx="${offerIdx ?? ""}" ${item.selected ? "checked" : ""} />
+            <span class="sl-fbt__box"></span>
+          </label>` : `<span class="sl-fbt__check-placeholder"></span>`}
+        <div class="sl-fbt__meta">
+          <div class="sl-fbt__name">${escapeHtml(item.product.title)}</div>
+          ${renderVariantSelect(item.product, item.selectedVariantId, isTrigger, offerIdx)}
+        </div>
+        ${showQty ? `
+          <div class="sl-fbt__qty">
+            <button type="button" data-role="qty-dec" data-trigger="${isTrigger}" data-idx="${offerIdx ?? ""}">−</button>
+            <span>${item.quantity}</span>
+            <button type="button" data-role="qty-inc" data-trigger="${isTrigger}" data-idx="${offerIdx ?? ""}">+</button>
+          </div>` : ""}
+        <div class="sl-fbt__price">${priceHTML(v)}</div>
+      </div>
+    `;
+    wireRow(el);
+  }
 
   function renderRow(el, item, isTrigger, offerIdx) {
     const s = state.campaign.settings || {};
@@ -324,6 +389,7 @@
 
   function renderTotal() {
     const el = state.mountEl.querySelector("[data-role=total]");
+    if (!el) return;
     const items = buildCartItems();
     const subtotal = items.reduce((s, i) => s + i.price * i.quantity, 0);
     const totalQty = items.reduce((s, i) => s + i.quantity, 0);
@@ -361,74 +427,6 @@
     `;
   }
 
-  // function buildCartItems() {
-  //   const raw = [];
-  //   if (state.trigger.selected) {
-  //     const v = getVariant(state.trigger.product, state.trigger.selectedVariantId);
-  //     if (v) {
-  //       raw.push({
-  //         id: v.id, quantity: state.trigger.quantity,
-  //         price: v.price, title: state.trigger.product.title, available: v.available,
-  //       });
-  //     }
-  //   }
-  //   state.offers.forEach((o) => {
-  //     if (!o.selected) return;
-  //     const v = getVariant(o.product, o.selectedVariantId);
-  //     if (v) {
-  //       raw.push({
-  //         id: v.id, quantity: o.quantity,
-  //         price: v.price, title: o.product.title, available: v.available,
-  //       });
-  //     }
-  //   });
-  //   const map = new Map();
-  //   for (const it of raw) {
-  //     if (map.has(it.id)) map.get(it.id).quantity += it.quantity;
-  //     else map.set(it.id, { ...it });
-  //   }
-  //   return Array.from(map.values());
-  // }
-
-  // async function addBundleToCart() {
-  //   const btn = state.mountEl.querySelector("[data-role=cta]");
-  //   const errEl = state.mountEl.querySelector("[data-role=error]");
-  //   errEl.hidden = true;
-  //   const original = btn.textContent;
-  //   btn.disabled = true;
-  //   btn.textContent = "Adding...";
-
-  //   try {
-  //     const items = buildCartItems();
-  //     if (!items.length) throw new Error("Please select at least one item.");
-  //     const unavail = items.filter((i) => !i.available);
-  //     if (unavail.length) {
-  //       throw new Error(`${unavail.map((u) => `"${u.title}"`).join(", ")} sold out.`);
-  //     }
-
-  //     const res = await fetch(ROUTES.cartAdd, {
-  //       method: "POST",
-  //       headers: {
-  //         "Content-Type": "application/json",
-  //         Accept: "application/json",
-  //         "X-Requested-With": "XMLHttpRequest",
-  //       },
-  //       body: JSON.stringify({
-  //         items: items.map((i) => ({ id: i.id, quantity: i.quantity })),
-  //       }),
-  //     });
-  //     const data = await res.json();
-  //     if (!res.ok) throw new Error(data.description || data.message || `HTTP ${res.status}`);
-
-  //     window.location.href = ROUTES.cart;
-  //   } catch (e) {
-  //     console.error("[selleasy]", e);
-  //     errEl.textContent = e.message || "Could not add the bundle.";
-  //     errEl.hidden = false;
-  //     btn.disabled = false;
-  //     btn.textContent = original;
-  //   }
-  // }
   function buildCartItems() {
     const items = [];
 
@@ -459,8 +457,6 @@
       }
     });
 
-    // Note: NO deduplication. Each bundle item is a distinct cart line
-    // because of the _bundle_id property.
     return items;
   }
 
@@ -483,7 +479,6 @@
       const bundleId = `bundle_${state.campaign.id}_${Date.now()}`;
       const campaignName = state.campaign.title || "Bundle";
 
-      // Detect which sections the theme uses
       const sectionsToRender = [];
       if (document.querySelector("cart-drawer")) {
         sectionsToRender.push("cart-drawer");
@@ -506,7 +501,6 @@
         })),
       };
 
-      // Ask Shopify to render the sections atomically with the add
       if (sectionsToRender.length) {
         body.sections = sectionsToRender.join(",");
         body.sections_url = window.location.pathname;
@@ -527,7 +521,6 @@
         throw new Error(addData.description || addData.message || `HTTP ${addRes.status}`);
       }
 
-      // addData.sections is a map: { "cart-drawer": "<html>...</html>", "cart-icon-bubble": "..." }
       const opened = await openCartDrawer(addData.sections);
       if (!opened) {
         window.location.href = ROUTES.cart;
@@ -545,10 +538,6 @@
     }
   }
 
-  /**
-   * Open the theme's cart drawer using section HTML returned from /cart/add.js.
-   * Returns true if a drawer was opened, false if no drawer was found.
-   */
   async function openCartDrawer(sections) {
     const cartDrawer = document.querySelector("cart-drawer");
 
@@ -557,27 +546,18 @@
         const parser = new DOMParser();
         const doc = parser.parseFromString(sections["cart-drawer"], "text/html");
 
-        // Shopify returns the full section wrapper. The <cart-drawer> element
-        // is usually nested one level inside that.
         const freshDrawer = doc.querySelector("cart-drawer");
         if (freshDrawer) {
-          // Swap INNER contents of the live element (preserves the custom element
-          // and its class listeners; replaces the empty-state template with items)
           cartDrawer.innerHTML = freshDrawer.innerHTML;
-
-          // Remove the "is-empty" class if Dawn was showing empty state
           cartDrawer.classList.remove("is-empty");
 
-          // Some Dawn forks use <cart-drawer-items> inside; re-trigger its connected logic
           cartDrawer.querySelectorAll("cart-drawer-items, cart-items").forEach((el) => {
-            // Force the custom element to re-run its constructor-bound init
             if (typeof el.connectedCallback === "function") {
               try { el.connectedCallback(); } catch (e) {}
             }
           });
         }
 
-        // Update the cart icon bubble
         if (sections["cart-icon-bubble"]) {
           const bubble = document.getElementById("cart-icon-bubble") ||
                          document.querySelector("[id*='cart-icon-bubble']");
@@ -591,7 +571,6 @@
           }
         }
 
-        // Open the drawer
         if (typeof cartDrawer.open === "function") {
           cartDrawer.open();
         } else {
@@ -604,7 +583,6 @@
       }
     }
 
-    // ── Fallback: dispatch events and try theme APIs ──
     const eventNames = ["cart:refresh", "cart:updated", "cart:added", "cart:open", "cart-drawer:open"];
     eventNames.forEach((name) => {
       document.dispatchEvent(new CustomEvent(name, { bubbles: true }));

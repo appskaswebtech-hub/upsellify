@@ -9,8 +9,8 @@ generator client {
 // enough when changing adapters.
 // See https://www.prisma.io/docs/orm/reference/prisma-schema-reference#string for more information
 datasource db {
-  provider = "sqlite"
-  url      = "file:dev.sqlite"
+  provider = "mysql"
+  url      = env("DATABASE_URL")
 }
 
 model Session {
@@ -194,9 +194,9 @@ model AnalyticsEvent {
 model ShopPlan {
   id               Int       @id @default(autoincrement())
   shop             String    @unique
-  plan             String    @default("free")   // "free" | "advanced"
+  plan             String    @default("free")
   subscriptionId   String?
-  status           String    @default("active") // "active" | "cancelled" | "expired"
+  status           String    @default("active")
   trialEndsAt      DateTime?
   billingStartedAt DateTime?
   createdAt        DateTime  @default(now())
