@@ -10,6 +10,7 @@
   const ROUTES = {
     product: (h) => `/products/${h}.js`,
     campaigns: (pid) => `/apps/selleasy/campaigns?productId=${pid}`,
+    campaignsPopup: (pid) => `/apps/selleasy/campaigns?productId=${pid}&placement=ATC_POPUP`,
     cartAdd: "/cart/add.js",
     cart: "/cart",
   };
@@ -22,6 +23,18 @@
     mountEl: null,
     currentTierIdx: 0,
     layoutType: "FBT_LIST",
+  };
+
+  const popupState = {
+    campaign: null,
+    trigger: null,
+    offers: [],
+    overlayEl: null,
+    capturedVariantId: null,
+    capturedQuantity: 1,
+    currentTierIdx: 0,
+    offersReady: false,
+    showOnReady: false,
   };
 
   const money = (cents, currency) =>
@@ -39,43 +52,87 @@
   fetch(ROUTES.product(handle))
     .then((r) => r.json())
     .then(async (product) => {
-      const res = await fetch(ROUTES.campaigns(product.id), { credentials: "same-origin" })
-        .then((r) => r.json()).catch(() => ({ campaigns: [] }));
-      const campaign = res.campaigns?.[0];
-      if (!campaign) return;
+      const [mainRes, popupRes] = await Promise.all([
+        fetch(ROUTES.campaigns(product.id), { credentials: "same-origin" })
+          .then((r) => r.json()).catch(() => ({ campaigns: [] })),
+        fetch(ROUTES.campaignsPopup(product.id), { credentials: "same-origin" })
+          .then((r) => r.json()).catch(() => ({ campaigns: [] })),
+      ]);
 
-      state.campaign = campaign;
-      state.layoutType = campaign.type || "FBT_LIST";
+      const campaign = mainRes.campaigns?.[0];
+      const popupCampaign = popupRes.campaigns?.[0];
 
-      state.trigger = {
-        product,
-        selectedVariantId: product.variants[0].id,
-        quantity: 1,
-        selected: true,
-      };
-
-      const offers = await Promise.all(
-        campaign.offers.map((o) =>
-          fetch(ROUTES.product(o.handle)).then((r) => r.json()).catch(() => null),
-        ),
-      );
-
-      state.offers = offers.filter(Boolean).map((p) => {
-        let variantId = p.variants[0].id;
-        if (campaign.settings?.autoMatchVariants) {
-          const triggerVariantName = product.variants[0].title;
-          const match = p.variants.find((v) => v.title === triggerVariantName);
-          if (match) variantId = match.id;
-        }
-        return {
-          product: p,
-          selected: !campaign.settings?.doNotPreselect,
-          selectedVariantId: variantId,
+      if (campaign) {
+        state.campaign = campaign;
+        state.layoutType = campaign.type || "FBT_LIST";
+        state.trigger = {
+          product,
+          selectedVariantId: product.variants[0].id,
           quantity: 1,
+          selected: true,
         };
-      });
+        const offers = await Promise.all(
+          campaign.offers.map((o) =>
+            fetch(ROUTES.product(o.handle)).then((r) => r.json()).catch(() => null),
+          ),
+        );
+        state.offers = offers.filter(Boolean).map((p) => {
+          let variantId = p.variants[0].id;
+          if (campaign.settings?.autoMatchVariants) {
+            const triggerVariantName = product.variants[0].title;
+            const match = p.variants.find((v) => v.title === triggerVariantName);
+            if (match) variantId = match.id;
+          }
+          return {
+            product: p,
+            selected: !campaign.settings?.doNotPreselect,
+            selectedVariantId: variantId,
+            quantity: 1,
+          };
+        });
+        mount();
+      }
 
-      mount();
+      if (popupCampaign) {
+        popupState.campaign = popupCampaign;
+        popupState.trigger = {
+          product,
+          selectedVariantId: product.variants[0].id,
+          quantity: 1,
+          selected: true,
+        };
+        // Register interceptor NOW — before offer fetches — so any ATC click is caught
+        mountPopupOverlay();
+        interceptAtcButton();
+
+        const popupOffers = await Promise.all(
+          popupCampaign.offers.map((o) =>
+            fetch(ROUTES.product(o.handle)).then((r) => r.json()).catch(() => null),
+          ),
+        );
+        popupState.offers = popupOffers.filter(Boolean).map((p) => {
+          let variantId = p.variants[0].id;
+          if (popupCampaign.settings?.autoMatchVariants) {
+            const triggerVariantName = product.variants[0].title;
+            const match = p.variants.find((v) => v.title === triggerVariantName);
+            if (match) variantId = match.id;
+          }
+          return {
+            product: p,
+            selected: !popupCampaign.settings?.doNotPreselect,
+            selectedVariantId: variantId,
+            quantity: 1,
+          };
+        });
+        popupState.offersReady = true;
+        // If user already clicked ATC during loading, render and show now
+        if (popupState.showOnReady) {
+          popupState.showOnReady = false;
+          renderPopup();
+          popupState.overlayEl.removeAttribute("hidden");
+          document.body.style.overflow = "hidden";
+        }
+      }
     })
     .catch((e) => console.error("[selleasy]", e));
 
@@ -476,7 +533,8 @@
         throw new Error(`${unavail.map((u) => `"${u.title}"`).join(", ")} sold out.`);
       }
 
-      const bundleId = `bundle_${state.campaign.id}_${Date.now()}`;
+      const variantKey = items.map((i) => i.id).sort((a, b) => a - b).join("-");
+      const bundleId = `bundle_${state.campaign.id}_${variantKey}`;
       const campaignName = state.campaign.title || "Bundle";
 
       const sectionsToRender = [];
@@ -606,4 +664,315 @@
 
     return false;
   }
+  // ── ATC Popup ──────────────────────────────────────────────────────────────
+
+  function mountPopupOverlay() {
+    const overlay = document.createElement("div");
+    overlay.className = "sl-popup-overlay";
+    overlay.setAttribute("hidden", "");
+    document.body.appendChild(overlay);
+    popupState.overlayEl = overlay;
+  }
+
+  function captureFromForm(form) {
+    const variantInput = form.querySelector('[name="id"]');
+    const qtyInput = form.querySelector('[name="quantity"]');
+    popupState.capturedVariantId = variantInput?.value ? Number(variantInput.value) : (popupState.trigger?.selectedVariantId || null);
+    popupState.capturedQuantity = qtyInput?.value ? Number(qtyInput.value) : 1;
+  }
+
+  function interceptAtcButton() {
+    // Capture form submits (standard themes)
+    document.addEventListener("submit", (e) => {
+      const form = e.target;
+      if (!form?.matches?.("form[action*='/cart/add']")) return;
+      if (!popupState.campaign || !popupState.overlayEl) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      captureFromForm(form);
+      showPopup();
+    }, true);
+
+    // Capture button clicks (Dawn-style themes with type="button" or JS-driven ATC)
+    document.addEventListener("click", (e) => {
+      if (!popupState.campaign || !popupState.overlayEl) return;
+      const btn = e.target.closest(
+        'button[name="add"], button[data-add-to-cart], .product-form__submit, [data-product-form] button[type="submit"]'
+      );
+      if (!btn) return;
+      const form = btn.closest("form[action*='/cart/add']");
+      if (!form) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      captureFromForm(form);
+      showPopup();
+    }, true);
+  }
+
+  function showPopup() {
+    if (!popupState.overlayEl || !popupState.campaign) return;
+    if (!popupState.offersReady) {
+      // Offers still loading — show a spinner and reveal once ready
+      const a = popupState.campaign.appearance || {};
+      popupState.overlayEl.innerHTML = `
+        <div class="sl-popup" style="--sl-accent:${a.accentColor || "#000"};--sl-radius:${a.borderRadius || 8}px">
+          <div class="sl-popup__head">
+            <h3 class="sl-popup__title">${escapeHtml(popupState.campaign.title)}</h3>
+            <button class="sl-popup__close" type="button" aria-label="Close">&times;</button>
+          </div>
+          <div style="padding:32px;text-align:center;color:#888;font-size:13px">Loading offers…</div>
+        </div>
+      `;
+      popupState.overlayEl.querySelector(".sl-popup__close").addEventListener("click", hidePopup);
+      popupState.overlayEl.addEventListener("click", (e) => { if (e.target === popupState.overlayEl) hidePopup(); });
+      popupState.overlayEl.removeAttribute("hidden");
+      document.body.style.overflow = "hidden";
+      popupState.showOnReady = true;
+      return;
+    }
+    renderPopup();
+    popupState.overlayEl.removeAttribute("hidden");
+    document.body.style.overflow = "hidden";
+  }
+
+  function hidePopup() {
+    if (!popupState.overlayEl) return;
+    popupState.overlayEl.setAttribute("hidden", "");
+    document.body.style.overflow = "";
+  }
+
+  function renderPopup() {
+    const c = popupState.campaign;
+    const a = c.appearance || {};
+    const d = c.discount;
+    const currency = window.Shopify?.currency?.active || state.currency || "USD";
+
+    const allItems = [
+      { ...popupState.trigger, isTrigger: true },
+      ...popupState.offers.map((o) => ({ ...o, isTrigger: false })),
+    ];
+
+    const itemsHTML = allItems.map((item, i) => {
+      const v = getVariant(item.product, item.selectedVariantId);
+      const img = item.product.featured_image || item.product.images?.[0];
+      const offerIdx = item.isTrigger ? null : i - 1;
+      return `
+        <div class="sl-fbt__row ${item.isTrigger ? "sl-fbt__row--trigger" : ""} ${!item.selected && !item.isTrigger ? "is-unchecked" : ""}">
+          ${!item.isTrigger ? `
+            <label class="sl-fbt__check">
+              <input type="checkbox" data-popup-check data-idx="${offerIdx}" ${item.selected ? "checked" : ""} />
+              <span class="sl-fbt__box"></span>
+            </label>` : `<span class="sl-fbt__check-placeholder"></span>`}
+          ${img ? `<img class="sl-fbt__img" src="${img}" alt="" />` : `<div class="sl-fbt__img sl-fbt__img--ph"></div>`}
+          <div class="sl-fbt__meta">
+            <div class="sl-fbt__name">${escapeHtml(item.product.title)}</div>
+            ${renderVariantSelect(item.product, item.selectedVariantId, item.isTrigger, offerIdx)}
+          </div>
+          <div class="sl-fbt__price">${priceHTML(v)}</div>
+        </div>
+      `;
+    }).join("");
+
+    // Tier tabs
+    const tierTabsHTML = d?.type === "TIERED" && d.tiers?.length ? `
+      <div class="sl-fbt__tiers">
+        ${d.tiers.map((t, i) => `
+          <button class="sl-fbt__tier ${i === popupState.currentTierIdx ? "is-active" : ""}" data-popup-tier="${i}" type="button">
+            ${escapeHtml(t.label || `Buy ${t.minItems}, get ${t.value}${t.valueType === "PERCENTAGE" ? "%" : ""}`)}
+          </button>
+        `).join("")}
+      </div>
+    ` : "";
+
+    // Discount-aware total
+    const selectedItems = allItems.filter((item) => item.selected || item.isTrigger);
+    const subtotal = selectedItems.reduce((s, item) => {
+      const v = getVariant(item.product, item.selectedVariantId);
+      return s + (v ? v.price * item.quantity : 0);
+    }, 0);
+    const totalQty = selectedItems.reduce((s, item) => s + item.quantity, 0);
+
+    let discountAmt = 0;
+    let discountLabel = "";
+    if (d && d.type !== "NONE") {
+      let tier = null;
+      if (d.type === "TIERED") {
+        tier = [...(d.tiers || [])].filter((t) => totalQty >= t.minItems).sort((a, b) => b.minItems - a.minItems)[0];
+      } else if (d.value) {
+        tier = { value: d.value, valueType: d.type };
+      }
+      if (tier) {
+        if (tier.valueType === "PERCENTAGE") {
+          discountAmt = Math.round(subtotal * (tier.value / 100));
+          discountLabel = `-${tier.value}%`;
+        } else {
+          discountAmt = Math.round(tier.value * 100);
+          discountLabel = `-${money(discountAmt, currency)}`;
+        }
+      }
+    }
+    const total = Math.max(0, subtotal - discountAmt);
+
+    popupState.overlayEl.innerHTML = `
+      <div class="sl-popup" style="--sl-accent:${a.accentColor || "#000"};--sl-text:${a.textColor || "#202020"};--sl-radius:${a.borderRadius || 8}px;font-family:${a.fontFamily || "inherit"}">
+        <div class="sl-popup__head">
+          <h3 class="sl-popup__title">${escapeHtml(c.title)}</h3>
+          <button class="sl-popup__close" type="button" aria-label="Close">&times;</button>
+        </div>
+        ${c.subtitle ? `<p class="sl-fbt__subtitle" style="margin:0 0 12px">${escapeHtml(c.subtitle)}</p>` : ""}
+        ${tierTabsHTML}
+        <div class="sl-popup__items">${itemsHTML}</div>
+        <div class="sl-fbt__total" style="margin-top:12px;padding-top:12px;border-top:1px solid #ececec">
+          <div class="sl-fbt__total-row">
+            <span class="sl-fbt__total-label">Total</span>
+            <span>
+              ${discountAmt > 0 ? `<span class="sl-fbt__compare">${money(subtotal, currency)}</span> <span class="sl-fbt__discount-tag">${discountLabel}</span>` : ""}
+              <span class="sl-fbt__total-val">${money(total, currency)}</span>
+            </span>
+          </div>
+        </div>
+        <p class="sl-fbt__note">Selected items will be added to cart.</p>
+        <div class="sl-fbt__error" data-popup-error hidden></div>
+        <button class="sl-popup__cta" type="button" data-popup-cta>${escapeHtml(c.ctaLabel)}</button>
+        <button class="sl-popup__skip" type="button" data-popup-skip>
+          No thanks, just add ${escapeHtml(popupState.trigger?.product?.title || "item")} to cart
+        </button>
+      </div>
+    `;
+
+    popupState.overlayEl.querySelector(".sl-popup__close").addEventListener("click", hidePopup);
+    popupState.overlayEl.addEventListener("click", (e) => {
+      if (e.target === popupState.overlayEl) hidePopup();
+    });
+    popupState.overlayEl.querySelector("[data-popup-cta]").addEventListener("click", addPopupBundleToCart);
+    popupState.overlayEl.querySelector("[data-popup-skip]").addEventListener("click", skipPopup);
+
+    popupState.overlayEl.querySelectorAll("[data-popup-tier]").forEach((b) => {
+      b.addEventListener("click", () => {
+        popupState.currentTierIdx = Number(b.dataset.popupTier);
+        renderPopup();
+        popupState.overlayEl.removeAttribute("hidden");
+      });
+    });
+
+    popupState.overlayEl.querySelectorAll("[data-popup-check]").forEach((cb) => {
+      cb.addEventListener("change", (e) => {
+        const idx = Number(e.target.dataset.idx);
+        popupState.offers[idx].selected = e.target.checked;
+        renderPopup();
+        popupState.overlayEl.removeAttribute("hidden");
+      });
+    });
+
+    popupState.overlayEl.querySelectorAll("select[data-role=variant]").forEach((sel) => {
+      sel.addEventListener("change", (e) => {
+        const isT = e.target.dataset.trigger === "true";
+        const idx = e.target.dataset.idx === "" ? null : Number(e.target.dataset.idx);
+        const id = Number(e.target.value);
+        if (isT) popupState.trigger.selectedVariantId = id;
+        else popupState.offers[idx].selectedVariantId = id;
+        renderPopup();
+        popupState.overlayEl.removeAttribute("hidden");
+      });
+    });
+  }
+
+  async function addPopupBundleToCart() {
+    const btn = popupState.overlayEl?.querySelector("[data-popup-cta]");
+    const errEl = popupState.overlayEl?.querySelector("[data-popup-error]");
+    if (!btn || !errEl) return;
+    errEl.hidden = true;
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Adding...";
+
+    try {
+      const tv = getVariant(popupState.trigger.product, popupState.trigger.selectedVariantId);
+      const cartItems = [];
+      if (tv) cartItems.push({ id: tv.id, quantity: popupState.capturedQuantity || 1, available: tv.available, title: popupState.trigger.product.title });
+      popupState.offers.filter((o) => o.selected).forEach((o) => {
+        const v = getVariant(o.product, o.selectedVariantId);
+        if (v) cartItems.push({ id: v.id, quantity: o.quantity, available: v.available, title: o.product.title });
+      });
+
+      if (!cartItems.length) throw new Error("Please select at least one item.");
+      const unavail = cartItems.filter((i) => !i.available);
+      if (unavail.length) throw new Error(`${unavail.map((u) => `"${u.title}"`).join(", ")} sold out.`);
+
+      const variantKey = cartItems.map((i) => i.id).sort((a, b) => a - b).join("-");
+      const bundleId = `bundle_${popupState.campaign.id}_${variantKey}`;
+      const campaignName = popupState.campaign.title || "Bundle";
+      const sectionsToRender = [];
+      if (document.querySelector("cart-drawer")) sectionsToRender.push("cart-drawer");
+      if (document.getElementById("cart-icon-bubble") || document.querySelector("[id*='cart-icon-bubble']")) sectionsToRender.push("cart-icon-bubble");
+
+      const body = {
+        items: cartItems.map((item, index) => ({
+          id: item.id,
+          quantity: item.quantity,
+          properties: {
+            "_bundle_id": bundleId,
+            "_bundle_campaign_id": popupState.campaign.id,
+            "_bundle_role": index === 0 ? "trigger" : "offer",
+            "Bundle": campaignName,
+          },
+        })),
+      };
+      if (sectionsToRender.length) {
+        body.sections = sectionsToRender.join(",");
+        body.sections_url = window.location.pathname;
+      }
+
+      const addRes = await fetch(ROUTES.cartAdd, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json", "X-Requested-With": "XMLHttpRequest" },
+        body: JSON.stringify(body),
+      });
+      const addData = await addRes.json();
+      if (!addRes.ok) throw new Error(addData.description || addData.message || `HTTP ${addRes.status}`);
+
+      hidePopup();
+      const opened = await openCartDrawer(addData.sections);
+      if (!opened) window.location.href = ROUTES.cart;
+    } catch (e) {
+      console.error("[selleasy popup]", e);
+      errEl.textContent = e.message || "Could not add the bundle.";
+      errEl.hidden = false;
+      btn.disabled = false;
+      btn.textContent = original;
+    }
+  }
+
+  async function skipPopup() {
+    hidePopup();
+    const variantId = popupState.capturedVariantId || popupState.trigger?.selectedVariantId;
+    const quantity = popupState.capturedQuantity || 1;
+    if (!variantId) return;
+
+    try {
+      const sectionsToRender = [];
+      if (document.querySelector("cart-drawer")) sectionsToRender.push("cart-drawer");
+      if (document.getElementById("cart-icon-bubble") || document.querySelector("[id*='cart-icon-bubble']")) sectionsToRender.push("cart-icon-bubble");
+
+      const body = { items: [{ id: variantId, quantity }] };
+      if (sectionsToRender.length) {
+        body.sections = sectionsToRender.join(",");
+        body.sections_url = window.location.pathname;
+      }
+
+      const res = await fetch(ROUTES.cartAdd, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json", "X-Requested-With": "XMLHttpRequest" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.description || data.message);
+      const opened = await openCartDrawer(data.sections);
+      if (!opened) window.location.href = ROUTES.cart;
+    } catch (e) {
+      console.error("[selleasy skip]", e);
+      window.location.href = ROUTES.cart;
+    }
+  }
+
 })();

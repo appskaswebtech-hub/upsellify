@@ -47,6 +47,9 @@ query CartInput {
       bundleId: attribute(key: "_bundle_id") {
         value
       }
+      campaignId: attribute(key: "_bundle_campaign_id") {
+        value
+      }
     }
   }
   discount {

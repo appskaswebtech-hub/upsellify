@@ -60,11 +60,13 @@ export function cartLinesDiscountsGenerateRun(input) {
   //   });
   // }
 for (const campaign of config.campaigns) {
-  // Group lines by bundle ID
+  // Group lines by bundle ID, matching only lines that belong to this campaign
   const bundleGroups = new Map();
   for (const line of input.cart.lines) {
     const bundleId = line.bundleId?.value;
     if (!bundleId) continue;
+    const lineCampaignId = line.campaignId?.value;
+    if (lineCampaignId && lineCampaignId !== campaign.campaignId) continue;
     const productId = line.merchandise?.product?.id;
     if (!productId || !campaign.productIds.includes(productId)) continue;
     if (!bundleGroups.has(bundleId)) bundleGroups.set(bundleId, []);

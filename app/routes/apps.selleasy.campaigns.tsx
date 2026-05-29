@@ -20,7 +20,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     where: {
       shop: session.shop,
       status: "ACTIVE",
-      placement: "PRODUCT_PAGE",
+      placement: url.searchParams.get("placement") || "PRODUCT_PAGE",
       deletedAt: null,
       AND: [
         { OR: [{ startDate: null }, { startDate: { lte: now } }] },

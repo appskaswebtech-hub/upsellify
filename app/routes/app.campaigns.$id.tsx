@@ -34,12 +34,15 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   });
   if (!campaign) throw new Response("Not found", { status: 404 });
 
-  const shopRow = await db.shop.findUnique({ where: { shop: session.shop } });
+  const [shopRow, shopPlan] = await Promise.all([
+    db.shop.findUnique({ where: { shop: session.shop } }),
+    db.shopPlan.findUnique({ where: { shop: session.shop } }),
+  ]);
 
   return {
     campaign,
     shopTimezone: shopRow?.timezone || "America/New_York",
-    plan: shopRow?.plan ?? "free", // ✅ Pass plan to frontend
+    plan: shopPlan?.plan ?? "free",
   };
 };
 
@@ -212,20 +215,21 @@ export default function CampaignEditor() {
     })),
   );
 
+  const initTz = campaign.timezone || shopTimezone;
   const [startDate, setStartDate] = useState(
-    campaign.startDate ? toDateInput(campaign.startDate) : toDateInput(new Date()),
+    campaign.startDate ? toDateInput(campaign.startDate, initTz) : toDateInput(new Date(), initTz),
   );
   const [startTime, setStartTime] = useState(
-    campaign.startDate ? toTimeInput(campaign.startDate) : "00:00",
+    campaign.startDate ? toTimeInput(campaign.startDate, initTz) : "00:00",
   );
   const [endEnabled, setEndEnabled] = useState(!!campaign.endDate);
   const [endDate, setEndDateValue] = useState(
-    campaign.endDate ? toDateInput(campaign.endDate) : "",
+    campaign.endDate ? toDateInput(campaign.endDate, initTz) : "",
   );
   const [endTime, setEndTime] = useState(
-    campaign.endDate ? toTimeInput(campaign.endDate) : "23:59",
+    campaign.endDate ? toTimeInput(campaign.endDate, initTz) : "23:59",
   );
-  const [timezone, setTimezone] = useState(campaign.timezone || shopTimezone);
+  const [timezone, setTimezone] = useState(initTz);
 
   const [showQuantityPicker, setShowQuantityPicker] = useState(campaign.showQuantityPicker);
   const [allowDeselectTrigger, setAllowDeselectTrigger] = useState(campaign.allowDeselectTrigger);
@@ -297,8 +301,8 @@ export default function CampaignEditor() {
       triggerType,
       triggers: triggerType === "ALL_PRODUCTS" ? [] : triggers,
       offers,
-      startDate: combineDateTime(startDate, startTime),
-      endDate: endEnabled ? combineDateTime(endDate, endTime) : null,
+      startDate: combineDateTime(startDate, startTime, timezone),
+      endDate: endEnabled ? combineDateTime(endDate, endTime, timezone) : null,
       timezone,
       settings: {
         showQuantityPicker,
@@ -727,17 +731,37 @@ function dedupe(arr: PickedResource[]): PickedResource[] {
   return arr.filter((p) => (seen.has(p.id) ? false : (seen.add(p.id), true)));
 }
 
-function toDateInput(d: Date | string) {
-  const dt = new Date(d);
-  return dt.toISOString().slice(0, 10);
+function tzParts(d: Date, timezone: string): Record<string, string> {
+  const parts: Record<string, string> = {};
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+    hour12: false,
+  }).formatToParts(d).forEach((p) => { parts[p.type] = p.value; });
+  return parts;
 }
 
-function toTimeInput(d: Date | string) {
+function toDateInput(d: Date | string, timezone?: string) {
   const dt = new Date(d);
-  return dt.toISOString().slice(11, 16);
+  if (!timezone) return dt.toISOString().slice(0, 10);
+  const p = tzParts(dt, timezone);
+  return `${p.year}-${p.month}-${p.day}`;
 }
 
-function combineDateTime(date: string, time: string): string | null {
+function toTimeInput(d: Date | string, timezone?: string) {
+  const dt = new Date(d);
+  if (!timezone) return dt.toISOString().slice(11, 16);
+  const p = tzParts(dt, timezone);
+  return `${p.hour}:${p.minute}`;
+}
+
+function combineDateTime(date: string, time: string, timezone: string): string | null {
   if (!date) return null;
-  return new Date(`${date}T${time || "00:00"}:00Z`).toISOString();
+  // Parse the local date/time in the given IANA timezone → UTC
+  const probe = new Date(`${date}T${time || "00:00"}:00Z`);
+  const p = tzParts(probe, timezone);
+  const localInTZ = new Date(`${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}Z`);
+  const offsetMs = localInTZ.getTime() - probe.getTime();
+  return new Date(probe.getTime() - offsetMs).toISOString();
 }

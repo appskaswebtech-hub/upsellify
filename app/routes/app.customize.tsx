@@ -14,14 +14,17 @@ import db from "../db.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
-  const shop = await db.shop.upsert({
-    where: { shop: session.shop },
-    update: {},
-    create: { shop: session.shop },
-  });
+  const [shop, shopPlan] = await Promise.all([
+    db.shop.upsert({
+      where: { shop: session.shop },
+      update: {},
+      create: { shop: session.shop },
+    }),
+    db.shopPlan.findUnique({ where: { shop: session.shop } }),
+  ]);
 
   // ✅ No redirect — everyone can VIEW the full page
-  return { shop, plan: shop.plan ?? "free" };
+  return { shop, plan: shopPlan?.plan ?? "free" };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -30,8 +33,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const data = JSON.parse(String(form.get("payload") || "{}"));
 
   // ✅ Server-side plan guard on actual save
-  const shop = await db.shop.findUnique({ where: { shop: session.shop } });
-  if (!shop?.plan || shop.plan === "free") {
+  const shopPlan = await db.shopPlan.findUnique({ where: { shop: session.shop } });
+  if (!shopPlan?.plan || shopPlan.plan === "free") {
     return json({ ok: false, upgradeRequired: true });
   }
 
@@ -214,23 +217,45 @@ export default function Customize() {
             <Card>
               <BlockStack gap="300">
                 <Text as="h3" variant="headingSm">Appearance</Text>
-                <InlineStack gap="300">
-                  <Box minWidth="200px">
-                    <TextField
-                      label="Accent / button color"
-                      value={accent}
-                      onChange={setAccent}
-                      autoComplete="off"
-                    />
-                  </Box>
-                  <Box minWidth="200px">
-                    <TextField
-                      label="Text color"
-                      value={textColor}
-                      onChange={setTextColor}
-                      autoComplete="off"
-                    />
-                  </Box>
+                <InlineStack gap="300" wrap>
+                  <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+                    <Box minWidth="180px">
+                      <TextField
+                        label="Accent / button color"
+                        value={accent}
+                        onChange={setAccent}
+                        autoComplete="off"
+                      />
+                    </Box>
+                    <div style={{ position: "relative", width: 36, height: 36, flexShrink: 0 }}>
+                      <div style={{ width: 36, height: 36, borderRadius: 6, border: "1px solid #c9cccf", background: accent }} />
+                      <input
+                        type="color"
+                        value={accent}
+                        onChange={(e) => setAccent(e.target.value)}
+                        style={{ position: "absolute", inset: 0, opacity: 0, width: "100%", height: "100%", cursor: "pointer", padding: 0, border: "none" }}
+                      />
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+                    <Box minWidth="180px">
+                      <TextField
+                        label="Text color"
+                        value={textColor}
+                        onChange={setTextColor}
+                        autoComplete="off"
+                      />
+                    </Box>
+                    <div style={{ position: "relative", width: 36, height: 36, flexShrink: 0 }}>
+                      <div style={{ width: 36, height: 36, borderRadius: 6, border: "1px solid #c9cccf", background: textColor }} />
+                      <input
+                        type="color"
+                        value={textColor}
+                        onChange={(e) => setTextColor(e.target.value)}
+                        style={{ position: "absolute", inset: 0, opacity: 0, width: "100%", height: "100%", cursor: "pointer", padding: 0, border: "none" }}
+                      />
+                    </div>
+                  </div>
                 </InlineStack>
                 <RangeSlider
                   label="Border radius (px)"

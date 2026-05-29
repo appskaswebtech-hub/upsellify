@@ -209,3 +209,76 @@
 .sl-fbt__total--classic {
   margin-top: 12px;
 }
+
+/* ─── ATC Popup ──────────────────────────────────────── */
+.sl-popup-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.sl-popup-overlay[hidden] { display: none; }
+
+.sl-popup {
+  background: #fff;
+  border-radius: var(--sl-radius, 8px);
+  padding: 20px;
+  max-width: 480px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  color: var(--sl-text, #202020);
+  font-family: var(--sl-font, inherit);
+  box-sizing: border-box;
+}
+.sl-popup *, .sl-popup *::before, .sl-popup *::after { box-sizing: border-box; }
+
+.sl-popup__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+.sl-popup__title { font-size: 16px; font-weight: 700; margin: 0; }
+.sl-popup__close {
+  background: none; border: none; cursor: pointer;
+  font-size: 24px; color: #888; padding: 0; line-height: 1;
+}
+.sl-popup__close:hover { color: #333; }
+
+.sl-popup__items { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+
+.sl-popup__cta {
+  width: 100%;
+  padding: 13px 16px;
+  background: var(--sl-accent, #000);
+  color: #fff;
+  border: 0;
+  border-radius: var(--sl-radius, 8px);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 14px;
+  margin-bottom: 10px;
+  letter-spacing: 0.02em;
+}
+.sl-popup__cta:hover { filter: brightness(0.9); }
+.sl-popup__cta:disabled { opacity: 0.6; cursor: wait; }
+
+.sl-popup__skip {
+  display: block;
+  width: 100%;
+  text-align: center;
+  font-size: 12px;
+  color: #888;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 4px;
+  text-decoration: underline;
+}
+.sl-popup__skip:hover { color: #333; }
